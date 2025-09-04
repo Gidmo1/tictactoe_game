@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
+import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 
+// -------------------- Tic Tac Toe Cell --------------------
 class TicTacToeCell extends PositionComponent with TapCallbacks {
   final int row, col;
   final Function(int, int) onTap;
-
   SpriteComponent? markSprite;
 
   TicTacToeCell({
@@ -19,7 +21,6 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 
   void mark(String symbol) async {
     markSprite?.removeFromParent();
-
     final spritePath = symbol == 'X' ? 'X.png' : 'O.png';
     markSprite = SpriteComponent()
       ..sprite = await Sprite.load(spritePath)
@@ -36,6 +37,7 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
   }
 }
 
+// -------------------- Tic Tac Toe Board --------------------
 class TicTacToeBoard extends Component {
   List<List<String>> board = List.generate(3, (_) => List.filled(3, ''));
   String currentPlayer = 'O';
@@ -51,12 +53,14 @@ class TicTacToeBoard extends Component {
   Future<void> onLoad() async {
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
 
+    // Background
     final background = SpriteComponent()
       ..sprite = await Sprite.load('playscreen.png')
       ..size = canvasSize
       ..position = Vector2.zero();
     add(background);
 
+    // Message text
     messageText = TextComponent(
       text: "Player $currentPlayer's turn",
       position: Vector2(canvasSize.x / 2, boardY - 80),
@@ -71,9 +75,9 @@ class TicTacToeBoard extends Component {
     );
     add(messageText);
 
-    // Return button
+    // Arcade-style return button
     add(
-      _ImageButtonComponent(
+      _ArcadeButton(
         imagePath: 'return.png',
         position: Vector2(40, 180),
         size: Vector2(60, 60),
@@ -87,9 +91,9 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    // Settings button
+    // Arcade-style settings button
     add(
-      _ImageButtonComponent(
+      _ArcadeButton(
         imagePath: 'settings.png',
         position: Vector2(canvasSize.x - 50, 70),
         size: Vector2(40, 40),
@@ -103,9 +107,9 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    // Restart button
+    // Arcade-style restart button
     add(
-      _ImageButtonComponent(
+      _ArcadeButton(
         imagePath: 'restart.png',
         position: Vector2(canvasSize.x / 2, canvasSize.y - 70),
         size: Vector2(80, 80),
@@ -137,7 +141,6 @@ class TicTacToeBoard extends Component {
     if (board[row][col] != '') return;
 
     board[row][col] = currentPlayer;
-
     final cell = children.whereType<TicTacToeCell>().firstWhere(
       (c) => c.row == row && c.col == col,
     );
@@ -152,10 +155,10 @@ class TicTacToeBoard extends Component {
       messageText.text = "Draw!";
       gameOver = true;
       return;
-    } else {
-      currentPlayer = currentPlayer == 'X' ? 'O' : 'X';
-      messageText.text = "Player $currentPlayer's turn";
     }
+
+    currentPlayer = currentPlayer == 'X' ? 'O' : 'X';
+    messageText.text = "Player $currentPlayer's turn";
   }
 
   bool checkForWinner() {
@@ -234,12 +237,12 @@ class TicTacToeBoard extends Component {
   }
 }
 
-// Image button class
-class _ImageButtonComponent extends SpriteComponent with TapCallbacks {
+// -------------------- Arcade-style Button --------------------
+class _ArcadeButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String imagePath;
 
-  _ImageButtonComponent({
+  _ArcadeButton({
     required this.imagePath,
     required Vector2 position,
     required Vector2 size,
@@ -252,5 +255,28 @@ class _ImageButtonComponent extends SpriteComponent with TapCallbacks {
   }
 
   @override
-  void onTapDown(TapDownEvent event) => onPressed();
+  void onTapDown(TapDownEvent event) {
+    FlameAudio.play('tap.wav');
+    _bounceEffect();
+
+    // Wait so you can see the bounce
+    Future.delayed(Duration(milliseconds: 180), () => onPressed());
+  }
+
+  void _bounceEffect() {
+    // squash -> overshoot -> settle
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.05, 1.05),
+          EffectController(duration: 0.08, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+  }
 }

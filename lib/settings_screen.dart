@@ -1,52 +1,70 @@
 import 'package:flame/components.dart';
-import 'package:flame/game.dart';
 import 'package:flame/events.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/widgets.dart';
+import 'package:tictactoe_game/tictactoe.dart';
 
-class SettingsScreen extends FlameGame with TapCallbacks {
-  late SpriteComponent returnButton;
-
+class SettingsScreen extends Component
+    with HasGameReference<TicTacToeGame>, TapCallbacks {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    await images.loadAll([
-      'background.png',
-      'settings_screen.png',
-      'return.png',
-    ]);
-
-    // Background
-    final background = SpriteComponent(
-      sprite: await loadSprite('background.png'),
-      size: size,
-      position: Vector2.zero(),
-      priority: 0,
+    final backgroundSprite = await game.loadSprite('background.png');
+    add(
+      SpriteComponent(
+        sprite: backgroundSprite,
+        size: game.size,
+        position: Vector2.zero(),
+      ),
     );
-    add(background);
 
-    // Settings overlay
-    final settingsUi = SpriteComponent(
-      sprite: await loadSprite('settings_screen.png'),
-      size: Vector2(250, 250),
-      position: Vector2(80, 100),
-      priority: 1,
+    final overlaySprite = await game.loadSprite('settings_screen.png');
+    add(
+      SpriteComponent(
+        sprite: overlaySprite,
+        size: Vector2(250, 250),
+        position: Vector2(80, 100),
+      ),
     );
-    add(settingsUi);
 
-    // Return button
-    returnButton = SpriteComponent(
-      sprite: await loadSprite('return.png'),
-      size: Vector2(50, 50),
-      position: Vector2(20, 20),
-      priority: 2,
+    /*final overlaySprite = await game.loadSprite('settings_screen.png');
+add(
+  _PushableOverlay(
+    sprite: overlaySprite,
+    size: Vector2(250, 250),
+    position: Vector2(80, 100),
+    onPressed: () {
+      print("Overlay pushed!");
+    },
+  ),
+);*/
+
+    final returnSprite = await game.loadSprite('return.png');
+    add(
+      _ReturnButton(
+        sprite: returnSprite,
+        position: Vector2(20, 20),
+        onPressed: () => game.router.pushReplacementNamed('tictactoe'),
+      ),
     );
-    add(returnButton);
   }
+}
+
+class _ReturnButton extends SpriteComponent with TapCallbacks {
+  final VoidCallback onPressed;
+  _ReturnButton({
+    required Sprite sprite,
+    required Vector2 position,
+    required this.onPressed,
+  }) : super(sprite: sprite, size: Vector2(50, 50), position: position);
 
   @override
   void onTapDown(TapDownEvent event) {
-    super.onTapDown(event);
+    // Play the tap sound
     FlameAudio.play('tap.wav');
+
+    // Run the assigned action
+    onPressed();
   }
 }
