@@ -109,10 +109,10 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(competitionSpriteButton);
 
-    final Vector2 iconSize = Vector2.all(36);
+    //final Vector2 iconSize = Vector2.all(36);
 
     // Notification button
-    final notifSprite = await game.loadSprite('notifications.png');
+    /*final notifSprite = await game.loadSprite('notifications.png');
     add(
       _IconButton(
         sprite: notifSprite,
@@ -120,7 +120,7 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
         size: iconSize,
         onPressed: () => print('Notification tapped'),
       ),
-    );
+    );*/
   }
 }
 
