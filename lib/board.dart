@@ -4,8 +4,8 @@ import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'package:tictactoe_game/settings_screen.dart';
 
-// -------------------- Tic Tac Toe Cell --------------------
 class TicTacToeCell extends PositionComponent with TapCallbacks {
   final int row, col;
   final Function(int, int) onTap;
@@ -32,12 +32,11 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
     onTap(row, col);
   }
 }
 
-// -------------------- Tic Tac Toe Board --------------------
 class TicTacToeBoard extends Component {
   List<List<String>> board = List.generate(3, (_) => List.filled(3, ''));
   String currentPlayer = 'O';
@@ -91,7 +90,7 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    // Arcade-style settings button
+    // settings button
     add(
       _ArcadeButton(
         imagePath: 'settings.png',
@@ -107,7 +106,7 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    // Arcade-style restart button
+    // restart button
     add(
       _ArcadeButton(
         imagePath: 'restart.png',
@@ -148,7 +147,7 @@ class TicTacToeBoard extends Component {
 
     if (checkForWinner()) {
       messageText.text = "Player $currentPlayer wins";
-      FlameAudio.play('win.wav');
+      if (SettingsScreen.gameSoundOn) FlameAudio.play('win.wav');
       gameOver = true;
       return;
     } else if (checkForDraw()) {
@@ -237,7 +236,6 @@ class TicTacToeBoard extends Component {
   }
 }
 
-// -------------------- Arcade-style Button --------------------
 class _ArcadeButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String imagePath;
@@ -259,12 +257,11 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
     FlameAudio.play('tap.wav');
     _bounceEffect();
 
-    // Wait so you can see the bounce
+    // Wait so I can see the bounce
     Future.delayed(Duration(milliseconds: 180), () => onPressed());
   }
 
   void _bounceEffect() {
-    // squash -> overshoot -> settle
     add(
       SequenceEffect([
         ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),

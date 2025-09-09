@@ -23,6 +23,7 @@ dependencies:
   flutter_facebook_auth: 6.2.0
   firebase_ui_auth: ^3.0.0
   firebase_ui_oauth_facebook: ^2.0.0
+  font_awesome_flutter: ^10.6.0
 
   
 
@@ -50,9 +51,23 @@ flutter:
     - assets/images/restart.png
     - assets/images/notifications.png
     - assets/images/return.png
+    - assets/images/toggle_leftb.png
+    - assets/images/toggle_rightb.png
     - assets/images/playscreen.png
     - assets/images/competition.png
+    - assets/images/toggle_left.png
+    - assets/images/leaderboard_header.png
+    - assets/images/leaderboard.png
+    - assets/images/toggle_right.png
+    - assets/images/settings_page.png
+    - assets/images/scoreboard.png
+    - assets/images/logout.png
+    - assets/images/medium.png
+    - assets/images/easy.png
+    - assets/images/hard.png
+    - assets/images/pause.png
     - assets/images/joinatournament.png
+    - assets/images/profile.png
     - assets/images/settings_screen.png
     - assets/images/vsfriend.png
     - assets/images/vscomputer.png

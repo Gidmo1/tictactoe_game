@@ -5,13 +5,19 @@ import 'package:flame/effects.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:flame_audio/flame_audio.dart';
+import 'package:tictactoe_game/difficulty_screen.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'package:tictactoe_game/vs_ai_board.dart';
 import 'firebase.dart';
 import 'board.dart';
+import 'leaderboard_screen.dart';
+//import 'profile_screen.dart';
 
 class TicTacToeGame extends FlameGame
     with HasKeyboardHandlerComponents, TapCallbacks {
   late final RouterComponent router;
+  String lastMessage = '';
+  String loggedInUser = '';
 
   @override
   Future<void> onLoad() async {
@@ -23,6 +29,9 @@ class TicTacToeGame extends FlameGame
         'menu': Route(MainMenuScreen.new),
         'tictactoe': Route(TicTacToeBoard.new),
         'settings': Route(SettingsScreen.new),
+        'vsai': Route(TicTacToeVsAI.new),
+        'difficulty': Route(DifficultyScreen.new),
+        'leaderboard': Route(LeaderboardScreen.new),
       },
     );
     add(router);
@@ -45,7 +54,7 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     add(
       TextComponent(
         text: '& ',
-        position: Vector2(200, 300),
+        position: Vector2(200, 150),
         anchor: Anchor.center,
         textRenderer: TextPaint(
           style: const TextStyle(
@@ -57,24 +66,24 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
 
-    // X (static)
+    // X
     final xSprite = await game.loadSprite('X.png');
     add(
       SpriteComponent(
         sprite: xSprite,
         size: Vector2(100, 100),
-        position: Vector2(120, 300),
+        position: Vector2(120, 150),
         anchor: Anchor.center,
       ),
     );
 
-    // O (static)
+    // O
     final oSprite = await game.loadSprite('O.png');
     add(
       SpriteComponent(
         sprite: oSprite,
         size: Vector2(100, 100),
-        position: Vector2(280, 300),
+        position: Vector2(280, 150),
         anchor: Anchor.center,
       ),
     );
@@ -103,7 +112,16 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       _ArcadeButton(
         sprite: vscomputerSprite,
         position: game.size / 2 + Vector2(0, 190),
-        onPressed: () => game.router.pushNamed('tictactoe'),
+        onPressed: () => game.router.pushNamed('difficulty'),
+      ),
+    );
+
+    final leaderboardSprite = await game.loadSprite('leaderboard.png');
+    add(
+      _ArcadeButton(
+        sprite: leaderboardSprite,
+        position: game.size / 2 + Vector2(0, 260),
+        onPressed: () => game.router.pushNamed('leaderboard'),
       ),
     );
 
@@ -111,10 +129,12 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     add(
       _ArcadeButton(
         sprite: competitionSprite,
-        position: game.size / 2 + Vector2(0, 260),
+        position: game.size / 2 + Vector2(0, 330),
         onPressed: () => game.router.pushNamed('tictactoe'),
       ),
     );
+
+    // Remove Facebook login button from tictactoe.dart
   }
 }
 
@@ -134,9 +154,8 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
          anchor: Anchor.center,
        );
 
-  @override
   void onTapDown(TapDownEvent event) {
-    FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
 
     add(
       SequenceEffect([
