@@ -11,7 +11,13 @@ import 'ai.dart';
 import 'board.dart'; // for TicTacToeCell + ArcadeButton reuse
 
 class TicTacToeVsAI extends Component {
-  static String selectedDifficulty = 'easy';
+  static String selectedDifficulty = _randomDifficulty();
+  static String _randomDifficulty() {
+    const difficulties = ['easy', 'medium', 'hard'];
+    difficulties.shuffle();
+    return difficulties.first;
+  }
+
   // Separate memory for each difficulty
   Map<String, List<List<String>>> boards = {
     'easy': List.generate(3, (_) => List.filled(3, '')),
@@ -33,12 +39,14 @@ class TicTacToeVsAI extends Component {
   bool gameOver = false;
 
   void resetState() {
-    boards[difficulty] = List.generate(3, (_) => List.filled(3, ''));
+    for (var key in boards.keys) {
+      boards[key] = List.generate(3, (_) => List.filled(3, ''));
+      humanScores[key] = 0;
+      aiScores[key] = 0;
+      roundCounts[key] = 1;
+    }
     currentPlayer = 'X';
     gameOver = false;
-    roundCounts[difficulty] = 1;
-    humanScores[difficulty] = 0;
-    aiScores[difficulty] = 0;
   }
 
   late TextComponent messageText;
@@ -54,60 +62,76 @@ class TicTacToeVsAI extends Component {
 
   @override
   Future<void> onLoad() async {
-    difficulty = TicTacToeVsAI.selectedDifficulty;
+    difficulty = TicTacToeVsAI._randomDifficulty();
     resetState();
 
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
+    try {
+      // Background
+      final background = SpriteComponent()
+        ..sprite = await Sprite.load('playscreen.png')
+        ..size = canvasSize
+        ..position = Vector2.zero();
+      add(background);
 
-    // Background
-    final background = SpriteComponent()
-      ..sprite = await Sprite.load('playscreen.png')
-      ..size = canvasSize
-      ..position = Vector2.zero();
-    add(background);
+      // Scoreboard image (move up and minimize size)
+      final scoreboardWidth = 180.0;
+      final scoreboardHeight = 60.0;
+      final scoreboardY = boardY - 160; // Move up a bit
+      final scoreboard = SpriteComponent()
+        ..sprite = await Sprite.load('scoreboard.png')
+        ..size = Vector2(scoreboardWidth, scoreboardHeight)
+        ..position = Vector2((canvasSize.x - scoreboardWidth) / 2, scoreboardY)
+        ..priority = 10;
+      add(scoreboard);
 
-    // Scoreboard image (move up and minimize size)
-    final scoreboardWidth = 180.0;
-    final scoreboardHeight = 60.0;
-    final scoreboardY = boardY - 160; // Move up a bit
-    final scoreboard = SpriteComponent()
-      ..sprite = await Sprite.load('scoreboard.png')
-      ..size = Vector2(scoreboardWidth, scoreboardHeight)
-      ..position = Vector2((canvasSize.x - scoreboardWidth) / 2, scoreboardY);
-    add(scoreboard);
-
-    // Score text (just numbers, centered on scoreboard, improved style)
-    scoreText = TextComponent(
-      text: "$humanScore - $aiScore",
-      position: Vector2(canvasSize.x / 2, scoreboardY + scoreboardHeight / 2),
-      anchor: Anchor.center,
-      textRenderer: TextPaint(
-        style: const TextStyle(
-          fontSize: 32,
-          color: Color(0xFF1B5E20), // dark green for contrast
-          fontWeight: FontWeight.w900,
-          shadows: [
-            Shadow(blurRadius: 4, color: Colors.white, offset: Offset(0, 2)),
-          ],
+      // Score text (just numbers, centered on scoreboard, improved style)
+      scoreText = TextComponent(
+        text: "$humanScore - $aiScore",
+        position: Vector2(canvasSize.x / 2, scoreboardY + scoreboardHeight / 2),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: const TextStyle(
+            fontSize: 32,
+            color: Color(0xFF1B5E20), // dark green for contrast
+            fontWeight: FontWeight.w900,
+            shadows: [
+              Shadow(blurRadius: 4, color: Colors.white, offset: Offset(0, 2)),
+            ],
+          ),
         ),
-      ),
-    );
-    add(scoreText);
+      )..priority = 11;
+      add(scoreText);
 
-    // Message text (placed below scoreboard, not overlapping)
-    messageText = TextComponent(
-      text: "Your turn",
-      position: Vector2(canvasSize.x / 2, scoreboardY + scoreboardHeight + 20),
-      anchor: Anchor.center,
-      textRenderer: TextPaint(
-        style: const TextStyle(
-          fontSize: 24,
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
+      // Message text (placed below scoreboard, not overlapping)
+      messageText = TextComponent(
+        text: "Your turn",
+        position: Vector2(
+          canvasSize.x / 2,
+          scoreboardY + scoreboardHeight + 20,
         ),
-      ),
-    );
-    add(messageText);
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: const TextStyle(
+            fontSize: 24,
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      )..priority = 12;
+      add(messageText);
+    } catch (e) {
+      add(
+        TextComponent(
+          text: 'Unable to load VS AI screen. Missing asset or error.',
+          position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: const TextStyle(fontSize: 24, color: Colors.redAccent),
+          ),
+        ),
+      );
+    }
 
     // Return button
     add(
@@ -116,10 +140,11 @@ class TicTacToeVsAI extends Component {
         position: Vector2(40, 180),
         size: Vector2(60, 60),
         onPressed: () {
+          resetState(); // Clear all AI memory
           final flameGame = findGame();
           if (flameGame != null) {
             final router = (flameGame as dynamic).router;
-            router?.pushNamed('difficulty');
+            router?.pushNamed('menu');
           }
         },
       ),

@@ -57,6 +57,15 @@ flutter:
     - assets/images/competition.png
     - assets/images/toggle_left.png
     - assets/images/leaderboard_header.png
+    - assets/images/progress_empty.png
+    - assets/images/progress_fill.png
+    - assets/images/trophy_gold.png
+    - assets/images/trophy_silver.png
+    - assets/images/trophy_bronze.png
+    - assets/images/confirmation_overlay.png
+    - assets/images/quick_match.png
+    - assets/images/global_leaderboard.png
+    - assets/images/league_leaderboard.png
     - assets/images/leaderboard.png
     - assets/images/toggle_right.png
     - assets/images/settings_page.png
@@ -68,7 +77,6 @@ flutter:
     - assets/images/pause.png
     - assets/images/joinatournament.png
     - assets/images/profile.png
-    - assets/images/settings_screen.png
     - assets/images/vsfriend.png
     - assets/images/vscomputer.png
     - assets/audio/lose.wav

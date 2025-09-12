@@ -5,13 +5,17 @@ import 'package:flame/effects.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:flame_audio/flame_audio.dart';
-import 'package:tictactoe_game/difficulty_screen.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/vs_ai_board.dart';
 import 'firebase.dart';
 import 'board.dart';
-import 'leaderboard_screen.dart';
-//import 'profile_screen.dart';
+import 'competition_screen.dart';
+import 'quick_match_screen.dart';
+import 'global_leaderboard_screen.dart';
+import 'play_screen.dart';
+import 'auth_gate.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'league_leaderboard_screen.dart';
 
 class TicTacToeGame extends FlameGame
     with HasKeyboardHandlerComponents, TapCallbacks {
@@ -30,8 +34,12 @@ class TicTacToeGame extends FlameGame
         'tictactoe': Route(TicTacToeBoard.new),
         'settings': Route(SettingsScreen.new),
         'vsai': Route(TicTacToeVsAI.new),
-        'difficulty': Route(DifficultyScreen.new),
-        'leaderboard': Route(LeaderboardScreen.new),
+        // Removed: 'difficulty': Route(DifficultyScreen.new),
+        'competition': Route(() => CompetitionScreen()),
+        'quick_match': Route(() => QuickMatchScreen()),
+        'global_leaderboard': Route(() => GlobalLeaderboardScreen()),
+        'league_leaderboard': Route(() => LeagueLeaderboardScreen()),
+        'play_screen': Route(() => PlayScreen()),
       },
     );
     add(router);
@@ -50,6 +58,8 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ..position = Vector2.zero()
       ..priority = 0;
     add(background);
+
+    // ...existing code...
 
     add(
       TextComponent(
@@ -116,21 +126,34 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
 
-    final leaderboardSprite = await game.loadSprite('leaderboard.png');
-    add(
-      _ArcadeButton(
-        sprite: leaderboardSprite,
-        position: game.size / 2 + Vector2(0, 260),
-        onPressed: () => game.router.pushNamed('leaderboard'),
-      ),
-    );
+    // Helper function to check Facebook sign-in
+    Future<bool> _isFacebookSignedIn() async {
+      try {
+        final user = await FirebaseAuth.instance.currentUser;
+        return user != null;
+      } catch (_) {
+        return false;
+      }
+    }
 
     final competitionSprite = await game.loadSprite('competition.png');
     add(
       _ArcadeButton(
         sprite: competitionSprite,
-        position: game.size / 2 + Vector2(0, 330),
-        onPressed: () => game.router.pushNamed('tictactoe'),
+        position: game.size / 2 + Vector2(0, 260),
+        onPressed: () async {
+          final isSignedIn = await _isFacebookSignedIn();
+          if (isSignedIn) {
+            game.router.pushNamed('competition');
+          } else {
+            showDialog(
+              context: game.buildContext!,
+              builder: (context) =>
+                  SizedBox(width: 400, height: 400, child: const AuthGate()),
+              barrierDismissible: false,
+            );
+          }
+        },
       ),
     );
 
