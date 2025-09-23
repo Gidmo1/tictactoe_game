@@ -1,24 +1,22 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
-import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
-
 import 'ai.dart';
-import 'board.dart'; // for TicTacToeCell + ArcadeButton reuse
+import 'models/score.dart';
+import 'service/score_service.dart';
+import 'models/user.dart' as app_user;
 
 class TicTacToeVsAI extends Component {
-  static String selectedDifficulty = _randomDifficulty();
   static String _randomDifficulty() {
     const difficulties = ['easy', 'medium', 'hard'];
-    difficulties.shuffle();
-    return difficulties.first;
+    return difficulties[Random().nextInt(difficulties.length)];
   }
 
-  // Separate memory for each difficulty
   Map<String, List<List<String>>> boards = {
     'easy': List.generate(3, (_) => List.filled(3, '')),
     'medium': List.generate(3, (_) => List.filled(3, '')),
@@ -45,27 +43,34 @@ class TicTacToeVsAI extends Component {
       aiScores[key] = 0;
       roundCounts[key] = 1;
     }
-    currentPlayer = 'X';
+    currentPlayer = humanPlayer;
     gameOver = false;
   }
 
-  late TextComponent messageText;
   late TextComponent scoreText;
+  late TextComponent roundText;
+  late SpriteComponent humanIcon;
+  late SpriteComponent aiIcon;
 
-  final ai = TicTacToeAI();
-  String difficulty = 'easy';
+  late TicTacToeAI ai;
+  late String difficulty;
 
   final double cellWidth = 390 / 3;
   final double cellHeight = 321 / 3;
   final double boardX = 4;
   final double boardY = 318;
+  final app_user.User? loggedInUser;
+
+  TicTacToeVsAI({this.loggedInUser});
 
   @override
   Future<void> onLoad() async {
-    difficulty = TicTacToeVsAI._randomDifficulty();
+    ai = TicTacToeAI();
+    difficulty = _randomDifficulty();
     resetState();
 
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
+
     try {
       // Background
       final background = SpriteComponent()
@@ -74,56 +79,82 @@ class TicTacToeVsAI extends Component {
         ..position = Vector2.zero();
       add(background);
 
-      // Scoreboard image (move up and minimize size)
-      final scoreboardWidth = 180.0;
-      final scoreboardHeight = 60.0;
-      final scoreboardY = boardY - 160; // Move up a bit
-      final scoreboard = SpriteComponent()
-        ..sprite = await Sprite.load('scoreboard.png')
-        ..size = Vector2(scoreboardWidth, scoreboardHeight)
-        ..position = Vector2((canvasSize.x - scoreboardWidth) / 2, scoreboardY)
-        ..priority = 10;
-      add(scoreboard);
+      // Score icons
+      final iconSize = 40.0;
+      humanIcon = SpriteComponent()
+        ..sprite = await Sprite.load('X.png')
+        ..size = Vector2(iconSize, iconSize)
+        ..position = Vector2(60, 50);
+      add(humanIcon);
 
-      // Score text (just numbers, centered on scoreboard, improved style)
+      aiIcon = SpriteComponent()
+        ..sprite = await Sprite.load('O.png')
+        ..size = Vector2(iconSize, iconSize)
+        ..position = Vector2(canvasSize.x - 100, 50);
+      add(aiIcon);
+
+      // Score text
       scoreText = TextComponent(
         text: "$humanScore - $aiScore",
-        position: Vector2(canvasSize.x / 2, scoreboardY + scoreboardHeight / 2),
+        position: Vector2(canvasSize.x / 2, 60),
         anchor: Anchor.center,
         textRenderer: TextPaint(
           style: const TextStyle(
             fontSize: 32,
-            color: Color(0xFF1B5E20), // dark green for contrast
-            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
             shadows: [
-              Shadow(blurRadius: 4, color: Colors.white, offset: Offset(0, 2)),
+              Shadow(blurRadius: 2, color: Colors.black, offset: Offset(0, 1)),
             ],
           ),
         ),
-      )..priority = 11;
+      );
       add(scoreText);
 
-      // Message text (placed below scoreboard, not overlapping)
-      messageText = TextComponent(
-        text: "Your turn",
-        position: Vector2(
-          canvasSize.x / 2,
-          scoreboardY + scoreboardHeight + 20,
-        ),
+      // Rounds played
+      roundText = TextComponent(
+        text: "Round $roundCount/5",
+        position: Vector2(canvasSize.x / 2, 100),
         anchor: Anchor.center,
         textRenderer: TextPaint(
           style: const TextStyle(
-            fontSize: 24,
-            color: Colors.white,
+            fontSize: 20,
+            color: Colors.amber,
             fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(blurRadius: 2, color: Colors.black, offset: Offset(0, 1)),
+            ],
           ),
         ),
-      )..priority = 12;
-      add(messageText);
+      );
+      add(roundText);
+
+      // Difficulty text
+      add(
+        TextComponent(
+          text: 'Difficulty: ' + difficulty.toUpperCase(),
+          position: Vector2(canvasSize.x / 2, 250),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: const TextStyle(
+              fontSize: 18,
+              color: Colors.amber,
+              fontWeight: FontWeight.bold,
+              shadows: [
+                Shadow(
+                  blurRadius: 2,
+                  color: Colors.black,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     } catch (e) {
       add(
         TextComponent(
-          text: 'Unable to load VS AI screen. Missing asset or error.',
+          text: 'Error loading VS Computer screen',
           position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
           anchor: Anchor.center,
           textRenderer: TextPaint(
@@ -140,7 +171,7 @@ class TicTacToeVsAI extends Component {
         position: Vector2(40, 180),
         size: Vector2(60, 60),
         onPressed: () {
-          resetState(); // Clear all AI memory
+          resetState();
           final flameGame = findGame();
           if (flameGame != null) {
             final router = (flameGame as dynamic).router;
@@ -150,7 +181,7 @@ class TicTacToeVsAI extends Component {
       ),
     );
 
-    // Restart button (resets match scores)
+    // Restart button
     add(
       _ArcadeButton(
         imagePath: 'restart.png',
@@ -167,7 +198,6 @@ class TicTacToeVsAI extends Component {
           TicTacToeCell(
             row: row,
             col: col,
-            onTap: handleTap,
             position: Vector2(
               boardX + col * cellWidth,
               boardY + row * cellHeight,
@@ -187,7 +217,7 @@ class TicTacToeVsAI extends Component {
 
     if (!gameOver) {
       Future.delayed(const Duration(milliseconds: 500), () {
-        aiMove();
+        if (!gameOver) aiMove();
       });
     }
   }
@@ -197,63 +227,87 @@ class TicTacToeVsAI extends Component {
     final cell = children.whereType<TicTacToeCell>().firstWhere(
       (c) => c.row == row && c.col == col,
     );
-    cell.mark(player);
+    cell.mark(player); // ← SHOW X/O
 
     if (checkForWinner(player)) {
-      endRound(
-        player == humanPlayer ? "You win this round" : "AI wins this round",
-        player,
-      );
-      return;
+      if (player == humanPlayer) {
+        humanScores[difficulty] = humanScore + 1;
+        saveScore("win");
+      } else {
+        aiScores[difficulty] = aiScore + 1;
+        saveScore("loss");
+      }
+      endRound(player);
     } else if (checkForDraw()) {
-      endRound("Draw", "");
-      return;
+      saveScore("draw");
+      endRound('');
+    } else {
+      currentPlayer = (player == humanPlayer) ? aiPlayer : humanPlayer;
     }
 
-    currentPlayer = (player == humanPlayer) ? aiPlayer : humanPlayer;
-    messageText.text = currentPlayer == humanPlayer ? "Your turn" : "AI's turn";
+    scoreText.text = "$humanScore - $aiScore";
+  }
+
+  List<int> getAIMove(List<List<String>> board, String human, String aiPlayer) {
+    switch (difficulty) {
+      case 'easy':
+        return ai.getMove(board);
+      case 'medium':
+        return ai.getMediumMove(board, human, aiPlayer);
+      case 'hard':
+        return ai.getHardMove(board, human, aiPlayer);
+      default:
+        return ai.getMove(board);
+    }
   }
 
   void aiMove() {
     if (gameOver) return;
-    List<int> move;
-    if (difficulty == 'easy') {
-      move = ai.getMove(board);
-    } else if (difficulty == 'medium') {
-      move = ai.getMediumMove(board, humanPlayer, aiPlayer);
-    } else {
-      move = ai.getHardMove(board, humanPlayer, aiPlayer);
+    final move = getAIMove(board, humanPlayer, aiPlayer);
+    if (move[0] != -1) {
+      makeMove(move[0], move[1], aiPlayer);
     }
-    if (move[0] == -1) return;
-    makeMove(move[0], move[1], aiPlayer);
   }
 
-  void endRound(String result, String winner) {
-    messageText.text = result;
-    if (SettingsScreen.gameSoundOn)
-      FlameAudio.play(winner == humanPlayer ? 'win.wav' : 'lose.wav');
+  void endRound(String winner) {
     gameOver = true;
-
-    if (winner == humanPlayer) {
-      humanScores[difficulty] = humanScores[difficulty]! + 1;
-    } else if (winner == aiPlayer) {
-      aiScores[difficulty] = aiScores[difficulty]! + 1;
-    }
-
-    scoreText.text = "You $humanScore - $aiScore AI (Round $roundCount/5)";
 
     if (roundCount >= 5) {
       Future.delayed(const Duration(seconds: 2), () {
-        messageText.text = humanScore > aiScore
-            ? "You are the winner of this match"
-            : (aiScore > humanScore
-                  ? "AI is the winner of this match"
-                  : "The match is a draw");
+        if (humanScore > aiScore) {
+          scoreText.text = "You win the match!";
+        } else if (aiScore > humanScore) {
+          scoreText.text = "AI wins the match!";
+        } else {
+          scoreText.text = "Match is a draw.";
+        }
       });
     } else {
-      roundCounts[difficulty] = roundCounts[difficulty]! + 1;
+      roundCounts[difficulty] = roundCount + 1;
       Future.delayed(const Duration(seconds: 2), restartBoard);
     }
+
+    roundText.text = "Round $roundCount/5";
+  }
+
+  Future<void> saveScore(String result) async {
+    if (loggedInUser == null) return;
+
+    // Translate result into win/loss/draw increments
+    int win = 0, loss = 0, draw = 0;
+    if (result == "win") win = 1;
+    if (result == "loss") loss = 1;
+    if (result == "draw") draw = 1;
+
+    final score = Score(
+      playerId: loggedInUser!.id,
+      playerName: loggedInUser!.userName,
+      wins: win,
+      losses: loss,
+      draws: draw,
+    );
+
+    await ScoreService().updateScore(score);
   }
 
   bool checkForWinner(String player) {
@@ -299,53 +353,67 @@ class TicTacToeVsAI extends Component {
         [2, 0],
       ],
     ];
-
-    for (var combo in combos) {
-      if (board[combo[0][0]][combo[0][1]] == player &&
+    return combos.any(
+      (combo) =>
+          board[combo[0][0]][combo[0][1]] == player &&
           board[combo[1][0]][combo[1][1]] == player &&
-          board[combo[2][0]][combo[2][1]] == player) {
-        return true;
-      }
-    }
-    return false;
+          board[combo[2][0]][combo[2][1]] == player,
+    );
   }
 
   bool checkForDraw() {
-    for (var row in board) {
-      for (var cell in row) {
-        if (cell == '') return false;
-      }
-    }
-    return true;
+    return board.every((row) => row.every((cell) => cell != ''));
   }
 
   void restartBoard() {
     boards[difficulty] = List.generate(3, (_) => List.filled(3, ''));
     gameOver = false;
     currentPlayer = humanPlayer;
-    messageText.text = "Your turn";
-
-    for (var cell in children.whereType<TicTacToeCell>()) {
-      cell.markSprite?.removeFromParent();
-    }
-
-    scoreText.text = "You $humanScore - $aiScore AI (Round $roundCount/5)";
-  }
-
-  void restartMatch() {
-    boards[difficulty] = List.generate(3, (_) => List.filled(3, ''));
-    humanScores[difficulty] = 0;
-    aiScores[difficulty] = 0;
-    roundCounts[difficulty] = 1;
-    gameOver = false;
-    currentPlayer = humanPlayer;
-    messageText.text = "Your turn";
 
     for (var cell in children.whereType<TicTacToeCell>()) {
       cell.markSprite?.removeFromParent();
     }
 
     scoreText.text = "$humanScore - $aiScore";
+    roundText.text = "Round $roundCount/5";
+  }
+
+  void restartMatch() {
+    resetState();
+    for (var cell in children.whereType<TicTacToeCell>()) {
+      cell.markSprite?.removeFromParent();
+    }
+    scoreText.text = "$humanScore - $aiScore";
+    roundText.text = "Round $roundCount/5";
+  }
+}
+
+class TicTacToeCell extends PositionComponent with TapCallbacks {
+  TicTacToeCell({
+    required this.row,
+    required this.col,
+    required super.position,
+    required super.size,
+  });
+
+  final int row;
+  final int col;
+  SpriteComponent? markSprite;
+  @override
+  void onTapDown(TapDownEvent event) {
+    event.handled = true;
+    (parent as TicTacToeVsAI).handleTap(row, col);
+  }
+
+  void mark(String player) async {
+    markSprite?.removeFromParent();
+    markSprite = SpriteComponent(
+      sprite: await Sprite.load(player == 'X' ? 'X.png' : 'O.png'),
+      size: Vector2(70, 70),
+      anchor: Anchor.center,
+      position: size / 2,
+    );
+    add(markSprite!);
   }
 }
 

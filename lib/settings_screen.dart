@@ -18,10 +18,10 @@ class SettingsScreen extends Component
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // Load sound state from Firestore in background (don't block UI)
+    // Load sound state from Firestore in background
     _loadSoundState();
 
-    // Ultimate background
+    // Screen background
     final backgroundSprite = await game.loadSprite('background.png');
     add(
       SpriteComponent(
@@ -36,59 +36,36 @@ class SettingsScreen extends Component
     add(
       SpriteComponent(
         sprite: settingsPageSprite,
-        size: Vector2(250, 100),
-        position: Vector2(80, 100),
+        size: Vector2(370, 410),
+        position: Vector2(6, 120),
       ),
     );
 
-    // Load toggle backgrounds
-    final toggleLeftBgSprite = await game.loadSprite('toggle_leftb.png');
-    final toggleRightBgSprite = await game.loadSprite('toggle_rightb.png');
-    // Load toggle buttons
-    final toggleLeftSprite = await game.loadSprite('toggle_left.png');
-    final toggleRightSprite = await game.loadSprite('toggle_right.png');
+    // Load toggle background
+    final toggleLeftBgSprite = await game.loadSprite('toggle_rightb.png');
+    // Load toggle button
+    final toggleLeftSprite = await game.loadSprite('toggle_right.png');
 
-    // Add left toggle background and button (button sound, minimized)
+    // Add left toggle background and button
     add(
       SpriteComponent(
         sprite: toggleLeftBgSprite,
-        size: Vector2(38, 22),
-        position: Vector2(285, 125),
+        size: Vector2(60, 30),
+        position: Vector2(305, 175),
         anchor: Anchor.center,
       ),
     );
     add(
       _SoundToggleButton(
         sprite: toggleLeftSprite,
-        position: Vector2(285, 125),
-        size: Vector2(16, 16),
-        minX: 269, // allow to reach left edge
-        maxX: 301, // allow to reach right edge
+        position: Vector2(280, 174),
+        size: Vector2(28, 28),
+        minX: 274, // allow to reach left edge
+        maxX: 335, // allow to reach right edge
         soundOn: buttonSoundOn,
         onChanged: (on) async {
           buttonSoundOn = on;
           await _saveSoundState();
-        },
-      ),
-    );
-    // Add right toggle background and button (game sound, minimized)
-    add(
-      SpriteComponent(
-        sprite: toggleRightBgSprite,
-        size: Vector2(38, 22),
-        position: Vector2(285, 170),
-        anchor: Anchor.center,
-      ),
-    );
-    add(
-      _SoundToggleButton(
-        sprite: toggleRightSprite,
-        position: Vector2(285, 170),
-        size: Vector2(16, 16),
-        minX: 269, // allow to reach left edge
-        maxX: 301, // allow to reach right edge
-        soundOn: gameSoundOn,
-        onChanged: (on) async {
           gameSoundOn = on;
           await _saveSoundState();
         },
@@ -104,25 +81,32 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Add sign-in button further down
-    /* final loginSprite = await game.loadSprite('login_button.png');
+    final resetSprite = await game.loadSprite('reset.png');
     add(
-      _FacebookLoginButton(
-        sprite: loginSprite,
-        position: Vector2(200, 250),
-        settingsScreen: this,
+      _ResetSprite(
+        sprite: resetSprite,
+        position: Vector2(210, 200),
+        onPressed: () {},
       ),
     );
 
-    // Add logout button
-    final logoutSprite = await game.loadSprite('logout.png');
+    final adsSprite = await game.loadSprite('remove_ads.png');
     add(
-      _LogoutButton(
-        sprite: logoutSprite,
-        position: Vector2(200, 320),
-        settingsScreen: this,
+      _AdsSprite(
+        sprite: adsSprite,
+        position: Vector2(210, 250),
+        onPressed: () {},
       ),
-    );*/
+    );
+
+    final privacySprite = await game.loadSprite('privacy_edit.png');
+    add(
+      _PrivacySprite(
+        sprite: privacySprite,
+        position: Vector2(210, 300),
+        onPressed: () => game.router.pushNamed('privacy'),
+      ),
+    );
   }
 
   Future<void> _loadSoundState() async {
@@ -145,6 +129,65 @@ class SettingsScreen extends Component
       'buttonSoundOn': buttonSoundOn,
       'gameSoundOn': gameSoundOn,
     }, SetOptions(merge: true));
+  }
+}
+
+class _ResetSprite extends SpriteComponent with TapCallbacks {
+  final VoidCallback onPressed;
+  _ResetSprite({
+    required Sprite sprite,
+    required Vector2 position,
+    required this.onPressed,
+  }) : super(sprite: sprite, size: Vector2(130, 40), position: position);
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+  }
+}
+
+class _PrivacySprite extends SpriteComponent with TapCallbacks {
+  final VoidCallback onPressed;
+  _PrivacySprite({
+    required Sprite sprite,
+    required Vector2 position,
+    required this.onPressed,
+  }) : super(sprite: sprite, size: Vector2(130, 40), position: position);
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+
+    // Arcade bounce effect
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.05, 1.05),
+          EffectController(duration: 0.08, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+    //To route after bounce
+    Future.delayed(Duration(milliseconds: 150), () => onPressed());
+  }
+}
+
+class _AdsSprite extends SpriteComponent with TapCallbacks {
+  final VoidCallback onPressed;
+  _AdsSprite({
+    required Sprite sprite,
+    required Vector2 position,
+    required this.onPressed,
+  }) : super(sprite: sprite, size: Vector2(130, 40), position: position);
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
   }
 }
 
@@ -187,7 +230,7 @@ class _SoundToggleButton extends SpriteComponent with TapCallbacks {
 
   @override
   Future<void> onLoad() async {
-    // Clamp so the edge of the circle never exceeds the background
+    // The circle not to exceed the background
     double bgMin = minX + radius;
     double bgMax = maxX - radius;
     position.x = soundOn ? bgMax : bgMin;
@@ -210,133 +253,3 @@ class _SoundToggleButton extends SpriteComponent with TapCallbacks {
     await onChanged(soundOn);
   }
 }
-
-/*class _FacebookLoginButton extends SpriteComponent with TapCallbacks {
-  final SettingsScreen settingsScreen;
-  _FacebookLoginButton({
-    required Sprite sprite,
-    required Vector2 position,
-    required this.settingsScreen,
-    Vector2? size,
-  }) : super(
-         sprite: sprite,
-         size: size ?? Vector2(200, 60),
-         position: position,
-         anchor: Anchor.center,
-       );
-
-  @override
-  void onTapDown(TapDownEvent event) async {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
-    try {
-      await FacebookAuth.instance.logOut(); // Force account picker
-      final result = await FacebookAuth.instance.login(
-        permissions: ['public_profile'],
-        loginBehavior: LoginBehavior.webOnly,
-      );
-      if (result.status == LoginStatus.success && result.accessToken != null) {
-        final accessToken = result.accessToken!.token;
-        final facebookCredential = FacebookAuthProvider.credential(accessToken);
-        final userCred = await FirebaseAuth.instance.signInWithCredential(
-          facebookCredential,
-        );
-        settingsScreen.userId = userCred.user?.uid;
-        settingsScreen.add(
-          _ConfirmationOverlay(
-            message:
-                'Successfully signed in as ${userCred.user?.displayName ?? userCred.user?.email ?? 'Unknown'}',
-          ),
-        );
-      }
-    } catch (e) {
-      // Optionally show error overlay here
-    }
-  }
-}
-
-class _LogoutButton extends SpriteComponent with TapCallbacks {
-  final SettingsScreen settingsScreen;
-  _LogoutButton({
-    required Sprite sprite,
-    required Vector2 position,
-    required this.settingsScreen,
-    Vector2? size,
-  }) : super(
-         sprite: sprite,
-         size: size ?? Vector2(200, 60),
-         position: position,
-         anchor: Anchor.center,
-       );
-
-  @override
-  void onTapDown(TapDownEvent event) async {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
-    await FirebaseAuth.instance.signOut();
-    settingsScreen.add(
-      _ConfirmationOverlay(message: 'Logged out successfully'),
-    );
-  }
-}
-
-class _ConfirmationOverlay extends PositionComponent {
-  final String message;
-  _ConfirmationOverlay({required this.message});
-
-  @override
-  Future<void> onLoad() async {
-    size = Vector2(340, 60);
-    position = Vector2(40, 400);
-    priority = 1000;
-    add(
-      RectangleComponent(
-        position: Vector2.zero(),
-        size: size,
-        paint: Paint()..color = const Color(0xCC000000),
-        priority: 1001,
-      ),
-    );
-    final tickSprite = await Sprite.load(
-      'notifications.png',
-    ); // Use your green tick asset if available
-    add(
-      SpriteComponent(
-        sprite: tickSprite,
-        size: Vector2(28, 28),
-        position: Vector2(24, size.y / 2),
-        anchor: Anchor.centerLeft,
-        priority: 1002,
-      ),
-    );
-    add(
-      TextComponent(
-        text: message,
-        position: Vector2(64, size.y / 2),
-        anchor: Anchor.centerLeft,
-        textRenderer: TextPaint(
-          style: const TextStyle(
-            fontSize: 18,
-            color: Color(0xFFFFFFFF),
-            fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(
-                color: Color(0xFF008000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-        ),
-        priority: 1003,
-      ),
-    );
-    Future.delayed(const Duration(seconds: 5), () {
-      removeFromParent();
-    });
-  }
-}*/
-
-// Update all FlameAudio.play calls in your game to check SettingsScreen.buttonSoundOn or gameSoundOn before playing
-// Example:
-// if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
-// if (SettingsScreen.gameSoundOn) FlameAudio.play('win.wav');
-// if (SettingsScreen.gameSoundOn) FlameAudio.play('lose.wav');

@@ -8,13 +8,11 @@ import 'package:tictactoe_game/settings_screen.dart';
 
 class TicTacToeCell extends PositionComponent with TapCallbacks {
   final int row, col;
-  final Function(int, int) onTap;
   SpriteComponent? markSprite;
 
   TicTacToeCell({
     required this.row,
     required this.col,
-    required this.onTap,
     required Vector2 position,
     required Vector2 size,
   }) : super(position: position, size: size);
@@ -33,7 +31,7 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
-    onTap(row, col);
+    (parent as TicTacToeBoard).handleTap(row, col);
   }
 }
 
@@ -74,7 +72,7 @@ class TicTacToeBoard extends Component {
     );
     add(messageText);
 
-    // Arcade-style return button
+    // Buttons
     add(
       _ArcadeButton(
         imagePath: 'return.png',
@@ -90,7 +88,6 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    // settings button
     add(
       _ArcadeButton(
         imagePath: 'settings.png',
@@ -106,7 +103,6 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    // restart button
     add(
       _ArcadeButton(
         imagePath: 'restart.png',
@@ -123,7 +119,6 @@ class TicTacToeBoard extends Component {
           TicTacToeCell(
             row: row,
             col: col,
-            onTap: handleTap,
             position: Vector2(
               boardX + col * cellWidth,
               boardY + row * cellHeight,
@@ -136,8 +131,7 @@ class TicTacToeBoard extends Component {
   }
 
   void handleTap(int row, int col) {
-    if (gameOver) return;
-    if (board[row][col] != '') return;
+    if (gameOver || board[row][col] != '') return;
 
     board[row][col] = currentPlayer;
     final cell = children.whereType<TicTacToeCell>().firstWhere(
@@ -216,12 +210,7 @@ class TicTacToeBoard extends Component {
   }
 
   bool checkForDraw() {
-    for (var row in board) {
-      for (var cell in row) {
-        if (cell == '') return false;
-      }
-    }
-    return true;
+    return board.every((row) => row.every((cell) => cell != ''));
   }
 
   void restartGame() {
@@ -254,10 +243,8 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
     _bounceEffect();
-
-    // Wait so I can see the bounce
     Future.delayed(Duration(milliseconds: 180), () => onPressed());
   }
 

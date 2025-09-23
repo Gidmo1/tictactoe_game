@@ -1,14 +1,14 @@
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+
 class User {
   final String id;
   final String userName;
-  //final String email;
   final String providerName;
   final String providerId;
 
   User({
     required this.id,
     required this.userName,
-    //required this.email,
     required this.providerId,
     required this.providerName,
   });
@@ -17,7 +17,6 @@ class User {
     return {
       'id': id,
       'userName': userName,
-      //'email': email,
       'providerId': providerId,
       'providerName': providerName,
     };
@@ -27,9 +26,21 @@ class User {
     return User(
       id: json['id'],
       userName: json['userName'],
-      //email: json['email'],
       providerId: json['providerId'],
       providerName: json['providerName'],
+    );
+  }
+
+  factory User.fromFirebase(firebase_auth.User fbUser) {
+    return User(
+      id: fbUser.uid,
+      userName: fbUser.displayName ?? 'Guest',
+      providerId: fbUser.providerData.isNotEmpty
+          ? fbUser.providerData[0].providerId
+          : 'firebase',
+      providerName: fbUser.providerData.isNotEmpty
+          ? fbUser.providerData[0].providerId
+          : 'firebase',
     );
   }
 }

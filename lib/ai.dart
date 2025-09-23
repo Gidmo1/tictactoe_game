@@ -3,7 +3,7 @@ import 'dart:math';
 class TicTacToeAI {
   final Random _random = Random();
 
-  /// Easy AI: chooses a random empty cell
+  // Easy Difficulty: easy to play with,can win easily. Beginners can use this
   List<int> getMove(List<List<String>> board) {
     final emptyCells = <List<int>>[];
     for (int row = 0; row < 3; row++) {
@@ -17,13 +17,13 @@ class TicTacToeAI {
     return emptyCells[_random.nextInt(emptyCells.length)];
   }
 
-  /// Medium AI: blocks player win, tries to win
+  // Medium Difficulty: blocks player win, tries to win but is still beatable
   List<int> getMediumMove(List<List<String>> board, String human, String ai) {
-    // 30% chance to make a random move (beatable)
+    // less percentage of choosing a random grid instead of blocking win
     if (_random.nextDouble() < 0.3) {
       return getMove(board);
     }
-    // Otherwise, play smart
+    // Play smart
     // Block player win
     for (int row = 0; row < 3; row++) {
       for (int col = 0; col < 3; col++) {
@@ -50,7 +50,7 @@ class TicTacToeAI {
         }
       }
     }
-    // Prioritize center
+    // Prioritize centers
     if (board[1][1] == '') return [1, 1];
     // Prioritize corners
     final corners = [
@@ -66,7 +66,7 @@ class TicTacToeAI {
     return getMove(board);
   }
 
-  /// Hard AI: unbeatable using minimax, randomizes among best moves, prioritizes center/corners
+  // Hard AI: unbeatable using minimax, randomizes among best moves, prioritizes center/corners
   List<int> getHardMove(List<List<String>> board, String human, String ai) {
     int bestScore = -1000;
     List<List<int>> bestMoves = [];

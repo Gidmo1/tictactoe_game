@@ -75,10 +75,24 @@ flutter:
     - assets/images/easy.png
     - assets/images/hard.png
     - assets/images/pause.png
+    - assets/images/cancel.png
     - assets/images/joinatournament.png
+    - assets/images/leaderboard_background.png
+    - assets/images/Bronze I.png
+    - assets/images/Silver II.png
+    - assets/images/Gold III.png
+    - assets/images/Silver II_locked.png
+    - assets/images/Gold III_locked.png
+    - assets/images/privacy_edit.png
+    - assets/images/remove_ads.png
+    - assets/images/reset.png
     - assets/images/profile.png
     - assets/images/vsfriend.png
     - assets/images/vscomputer.png
+    - assets/images/account_deletion.png
+    - assets/images/data_access_request.png
+    - assets/images/privacy_policy.png
+    - assets/images/privacy_page.png
     - assets/audio/lose.wav
     - assets/audio/win.wav
     - assets/audio/tap.wav

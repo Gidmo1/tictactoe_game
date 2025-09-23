@@ -11,7 +11,7 @@ void main() async {
   // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Preload game audio
+  //To load game audio while the game is loading
   await FlameAudio.audioCache.loadAll(['tap.wav', 'win.wav', 'lose.wav']);
 
   runApp(const MyApp());
@@ -155,7 +155,6 @@ class MyApp extends StatelessWidget {
               ),
             );
           },
-          // ...other overlays...
         },
       ),
     );
