@@ -6,21 +6,26 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/privacy_options_screen.dart';
+import 'package:tictactoe_game/profile_screen.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/vs_ai_board.dart';
 import 'firebase.dart';
 import 'board.dart';
 import 'competition_screen.dart';
-import 'play_screen.dart';
 import 'auth_gate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'models/user.dart' as app_user;
 
 class TicTacToeGame extends FlameGame
     with HasKeyboardHandlerComponents, TapCallbacks {
   late final RouterComponent router;
   String lastMessage = '';
   String loggedInUser = '';
+
+  //Selection state for difficulty screen
+  String selectedDifficulty = 'medium';
+  int? selectedRounds = 5;
 
   @override
   Future<void> onLoad() async {
@@ -31,25 +36,57 @@ class TicTacToeGame extends FlameGame
       initialRoute: 'menu',
       routes: {
         'menu': Route(() => MainMenuScreen()),
+        'profile': Route(() => ProfileScreen()),
         'tictactoe': Route(() => TicTacToeBoard()),
         'settings': Route(() => SettingsScreen()),
-        'vsai': Route(() => TicTacToeVsAI()),
+        'vsai': Route(() {
+          final fbUser = FirebaseAuth.instance.currentUser;
+
+          if (fbUser == null) {
+            // Not logged in — still allow offline play
+            return TicTacToeVsAI();
+          }
+
+          // Logged in — pass user info into the game
+          final user = app_user.User(
+            id: fbUser.uid,
+            userName: fbUser.displayName ?? "Anonymous",
+            providerId: fbUser.providerData.isNotEmpty
+                ? fbUser.providerData[0].providerId
+                : "firebase",
+            providerName: fbUser.providerData.isNotEmpty
+                ? fbUser.providerData[0].providerId
+                : "firebase",
+          );
+
+          return TicTacToeVsAI(loggedInUser: user);
+        }),
+
         'competition': Route(() => CompetitionScreen()),
         'privacy': Route(() => PrivacyOptionsScreen()),
-        'play_screen': Route(() => PlayScreen()),
       },
     );
     add(router);
   }
 }
 
-// Menu screen
 class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
+  TextComponent? scoreDisplay;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? scoreListener;
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    FlameAudio.bgm.play('background_music.mp3');
+    void playBackgroundMusic() {
+      if (SettingsScreen.buttonSoundOn) {
+        FlameAudio.bgm.play('background_music.mp3');
+      } else {
+        FlameAudio.bgm.stop();
+      }
+    }
+
+    playBackgroundMusic();
 
     final background = SpriteComponent()
       ..sprite = await game.loadSprite('background.png')
@@ -73,7 +110,7 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
 
-    // X
+    // X and O sprites
     final xSprite = await game.loadSprite('X.png');
     add(
       SpriteComponent(
@@ -84,7 +121,6 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
 
-    // O
     final oSprite = await game.loadSprite('O.png');
     add(
       SpriteComponent(
@@ -95,28 +131,23 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
 
-    // 🔥 Scores section
-    final scores = await _getUserScores();
+    final profileSprite = await game.loadSprite('profile.png');
+
     add(
-      TextComponent(
-        text:
-            "Wins: ${scores['wins']}  |  Losses: ${scores['losses']}  |  Draws: ${scores['draws']}",
-        position: Vector2(game.size.x / 2, 250),
-        anchor: Anchor.center,
-        textRenderer: TextPaint(
-          style: const TextStyle(
-            fontSize: 20,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+      ProfileAvatar(
+        sprite: profileSprite,
+        size: Vector2(60, 60),
+        position: Vector2(50, 60),
+        onTap: () {
+          game.router.pushNamed('profile');
+        },
       ),
     );
 
     // Buttons
     final playSprite = await game.loadSprite('play.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: playSprite,
         position: game.size / 2 + Vector2(0, -70),
         onPressed: () => game.router.pushNamed('tictactoe'),
@@ -125,40 +156,33 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
 
     final vsfriendSprite = await game.loadSprite('vsfriend.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: vsfriendSprite,
-        position: game.size / 2 + Vector2(0, 0),
+        position: game.size / 2,
         onPressed: () => game.router.pushNamed('tictactoe'),
       ),
     );
 
     final vscomputerSprite = await game.loadSprite('vscomputer.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: vscomputerSprite,
         position: game.size / 2 + Vector2(0, 70),
-        onPressed: () => game.router.pushNamed('vsai'),
+        onPressed: () {
+          final g = game as TicTacToeGame;
+          g.router.pushNamed('vsai');
+        },
       ),
     );
 
-    // Helper function to check Facebook sign-in
-    Future<bool> _isFacebookSignedIn() async {
-      try {
-        final user = FirebaseAuth.instance.currentUser;
-        return user != null;
-      } catch (_) {
-        return false;
-      }
-    }
-
     final competitionSprite = await game.loadSprite('competition.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: competitionSprite,
         position: game.size / 2 + Vector2(0, 140),
         onPressed: () async {
-          final isSignedIn = await _isFacebookSignedIn();
-          if (isSignedIn) {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
             game.router.pushNamed('competition');
           } else {
             showDialog(
@@ -172,41 +196,34 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
   }
+}
 
-  Future<Map<String, int>> _getUserScores() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return {"wins": 0, "losses": 0, "draws": 0};
+class ProfileAvatar extends SpriteComponent with TapCallbacks {
+  final VoidCallback onTap;
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('scores')
-        .where('playerId', isEqualTo: user.uid)
-        .get();
+  ProfileAvatar({
+    required Sprite sprite,
+    required Vector2 position,
+    required Vector2 size,
+    required this.onTap,
+  }) : super(
+         sprite: sprite,
+         position: position,
+         size: size,
+         anchor: Anchor.center,
+       );
 
-    int wins = 0, losses = 0, draws = 0;
-
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      switch (data['result']) {
-        case 'win':
-          wins++;
-          break;
-        case 'loss':
-          losses++;
-          break;
-        case 'draw':
-          draws++;
-          break;
-      }
-    }
-
-    return {"wins": wins, "losses": losses, "draws": draws};
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
+    onTap();
   }
 }
 
-class _ArcadeButton extends SpriteComponent with TapCallbacks {
+class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
 
-  _ArcadeButton({
+  _PressdownButton({
     required Sprite sprite,
     required Vector2 position,
     required this.onPressed,
@@ -220,7 +237,7 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
 
     add(
       SequenceEffect([

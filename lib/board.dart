@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flame/components.dart';
-import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
+import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
@@ -46,6 +47,10 @@ class TicTacToeBoard extends Component {
   final double boardX = 4;
   final double boardY = 318;
 
+  bool confettiRunning = false;
+  final Random random = Random();
+  final List<Component> confettiPieces = [];
+
   @override
   Future<void> onLoad() async {
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
@@ -74,7 +79,7 @@ class TicTacToeBoard extends Component {
 
     // Buttons
     add(
-      _ArcadeButton(
+      _PressdownButton(
         imagePath: 'return.png',
         position: Vector2(40, 180),
         size: Vector2(60, 60),
@@ -89,7 +94,7 @@ class TicTacToeBoard extends Component {
     );
 
     add(
-      _ArcadeButton(
+      _PressdownButton(
         imagePath: 'settings.png',
         position: Vector2(canvasSize.x - 50, 70),
         size: Vector2(40, 40),
@@ -104,7 +109,7 @@ class TicTacToeBoard extends Component {
     );
 
     add(
-      _ArcadeButton(
+      _PressdownButton(
         imagePath: 'restart.png',
         position: Vector2(canvasSize.x / 2, canvasSize.y - 70),
         size: Vector2(80, 80),
@@ -143,6 +148,7 @@ class TicTacToeBoard extends Component {
       messageText.text = "Player $currentPlayer wins";
       if (SettingsScreen.gameSoundOn) FlameAudio.play('win.wav');
       gameOver = true;
+      _startConfetti();
       return;
     } else if (checkForDraw()) {
       messageText.text = "Draw!";
@@ -209,9 +215,7 @@ class TicTacToeBoard extends Component {
     return false;
   }
 
-  bool checkForDraw() {
-    return board.every((row) => row.every((cell) => cell != ''));
-  }
+  bool checkForDraw() => board.every((row) => row.every((cell) => cell != ''));
 
   void restartGame() {
     board = List.generate(3, (_) => List.filled(3, ''));
@@ -222,14 +226,116 @@ class TicTacToeBoard extends Component {
     for (var cell in children.whereType<TicTacToeCell>()) {
       cell.markSprite?.removeFromParent();
     }
+
+    // Stop confetti
+    confettiRunning = false;
+    for (var c in confettiPieces) {
+      c.removeFromParent();
+    }
+    confettiPieces.clear();
+  }
+
+  void _startConfetti() {
+    if (confettiRunning) return;
+    confettiRunning = true;
+    print("Confetti has started");
+
+    final size = findGame()?.size ?? Vector2(360, 640);
+
+    void spawnConfettiPiece() {
+      if (!confettiRunning) return;
+
+      // Smaller size
+      final double confettiSize = 4 + random.nextDouble() * 6;
+
+      // Random shape
+      final shapeType = random.nextInt(3);
+
+      late PositionComponent confetti;
+
+      final paint = Paint()
+        ..color = Color.fromARGB(
+          255,
+          random.nextInt(256),
+          random.nextInt(256),
+          random.nextInt(256),
+        );
+
+      switch (shapeType) {
+        case 0:
+          confetti = RectangleComponent(
+            size: Vector2(confettiSize, confettiSize * 1.5),
+            paint: paint,
+            position: Vector2(random.nextDouble() * size.x, -10),
+            anchor: Anchor.center,
+          );
+          break;
+        case 1:
+          confetti = CircleComponent(
+            radius: confettiSize / 2,
+            paint: paint,
+            position: Vector2(random.nextDouble() * size.x, -10),
+            anchor: Anchor.center,
+          );
+          break;
+        case 2:
+          confetti = PolygonComponent(
+            [
+              Vector2(0, 0),
+              Vector2(confettiSize, 0),
+              Vector2(confettiSize / 2, confettiSize),
+            ],
+            paint: paint,
+            position: Vector2(random.nextDouble() * size.x, -10),
+            anchor: Anchor.center,
+          );
+          break;
+      }
+
+      confettiPieces.add(confetti);
+      add(confetti);
+
+      // falling with random speed
+      final fallDuration = 1.5 + random.nextDouble() * 1.5;
+      confetti.add(
+        MoveEffect.to(
+          Vector2(confetti.x, size.y + 50),
+          EffectController(duration: fallDuration, curve: Curves.linear),
+          onComplete: () {
+            confetti.removeFromParent();
+            confettiPieces.remove(confetti);
+          },
+        ),
+      );
+      // Random rotating
+      confetti.add(
+        RotateEffect.by(
+          random.nextDouble() * pi * 4,
+          EffectController(duration: fallDuration, curve: Curves.linear),
+        ),
+      );
+
+      Future.delayed(const Duration(milliseconds: 15), spawnConfettiPiece);
+    }
+
+    // Start spawning
+    spawnConfettiPiece();
+
+    // Stop after 2 and half seconds
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      confettiRunning = false;
+      print(
+        "Confetti has stopped",
+      ); //Used this to check if its loading and I'm not seeing it
+    });
   }
 }
 
-class _ArcadeButton extends SpriteComponent with TapCallbacks {
+class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String imagePath;
 
-  _ArcadeButton({
+  _PressdownButton({
     required this.imagePath,
     required Vector2 position,
     required Vector2 size,
@@ -243,7 +349,7 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     _bounceEffect();
     Future.delayed(Duration(milliseconds: 180), () => onPressed());
   }

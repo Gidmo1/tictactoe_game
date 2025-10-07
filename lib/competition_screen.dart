@@ -1,8 +1,9 @@
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
-import 'package:flame/input.dart';
 import 'package:flutter/material.dart';
+import 'settings_screen.dart';
+import 'package:flame_audio/flame_audio.dart';
 
 // Return button
 class _ReturnButton extends SpriteComponent with TapCallbacks {
@@ -21,16 +22,17 @@ class _ReturnButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     add(ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)));
     Future.delayed(const Duration(milliseconds: 120), onPressed);
   }
 }
 
-// Button that bounces like an arcade button
-class _ArcadeButton extends SpriteComponent with TapCallbacks {
+// Pressdown button
+class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
 
-  _ArcadeButton({
+  _PressdownButton({
     required Sprite sprite,
     required Vector2 position,
     Vector2? size,
@@ -44,6 +46,7 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     // Bounce effect
     add(
       SequenceEffect([
@@ -96,7 +99,7 @@ class LeaderboardCardComponent extends PositionComponent {
     // Card background
     add(RectangleComponent(size: size, paint: Paint()..color = cardColor));
 
-    // Trophy and medal
+    // Trophy
     if (medalColor != null) {
       final trophySize = 28.0;
       add(
@@ -353,7 +356,7 @@ class CompetitionScreen extends Component with HasGameReference {
 
     // Join Tournament button
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: joinSprite,
         position: Vector2(game.size.x / 2, bottomStartY + buttonHeight / 2),
         size: Vector2(buttonWidth, buttonHeight),

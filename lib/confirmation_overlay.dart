@@ -1,46 +1,53 @@
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
+import 'package:flame/effects.dart';
 import 'package:flame/game.dart';
-import 'package:flutter/material.dart';
+import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/widgets.dart';
+import 'package:tictactoe_game/settings_screen.dart';
 
 class ConfirmationOverlay extends PositionComponent {
-  final String message;
   final VoidCallback onYes;
   final VoidCallback onNo;
 
-  ConfirmationOverlay({
-    required this.message,
-    required this.onYes,
-    required this.onNo,
-  }) : super(size: Vector2(320, 180), anchor: Anchor.center, priority: 100);
+  ConfirmationOverlay({required this.onYes, required this.onNo})
+    : super(
+        size: Vector2(320, 180),
+        anchor: Anchor.center,
+        priority: 100,
+        position: Vector2(160, 100),
+      );
 
   @override
   Future<void> onLoad() async {
     final gameRef = findGame() as FlameGame?;
     if (gameRef != null) {
-      // Center the overlay
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
     }
 
-    // Background (can replace with sprite if you want)
-    add(
-      RectangleComponent(
-        size: size,
-        paint: Paint()..color = Colors.black.withOpacity(0.8),
-        anchor: Anchor.topLeft,
-      ),
-    );
+    // Background sprite
+    final bgSprite = await (gameRef?.loadSprite('confirmation_overlay.png'));
+    if (bgSprite != null) {
+      add(
+        SpriteComponent(
+          sprite: bgSprite,
+          size: size,
+          anchor: Anchor.center,
+          position: Vector2(160, 100),
+        ),
+      );
+    }
 
-    // Message
     add(
       TextComponent(
-        text: message,
-        position: Vector2(size.x / 2, 40),
-        anchor: Anchor.center,
+        text:
+            "Are you sure that you want to leave this mode? \n               You will lose the current game.",
+        anchor: Anchor.topCenter,
+        position: Vector2(size.x / 2, 20),
         textRenderer: TextPaint(
           style: const TextStyle(
-            fontSize: 20,
-            color: Colors.white,
+            color: Color(0xFFFFFFFF),
+            fontSize: 14,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -48,76 +55,70 @@ class ConfirmationOverlay extends PositionComponent {
     );
 
     // Yes button
-    add(
-      _OverlayButton(
-        label: "Yes",
-        position: Vector2(size.x / 2 - 60, size.y - 50),
-        onPressed: () {
-          onYes();
-          removeFromParent();
-        },
-      ),
-    );
+    final yesSprite = await gameRef?.loadSprite('yes.png');
+    if (yesSprite != null) {
+      add(
+        _OverlayButton(
+          sprite: yesSprite,
+          position: Vector2(size.x / 2 - 80, size.y - 50),
+          onPressed: () {
+            onYes();
+            removeFromParent();
+          },
+        ),
+      );
+    }
 
     // No button
-    add(
-      _OverlayButton(
-        label: "No",
-        position: Vector2(size.x / 2 + 60, size.y - 50),
-        onPressed: () {
-          onNo();
-          removeFromParent();
-        },
-      ),
-    );
+    final noSprite = await gameRef?.loadSprite('no.png');
+    if (noSprite != null) {
+      add(
+        _OverlayButton(
+          sprite: noSprite,
+          position: Vector2(size.x / 2 + 80, size.y - 50),
+          onPressed: () {
+            onNo();
+            removeFromParent();
+          },
+        ),
+      );
+    }
   }
 }
 
-class _OverlayButton extends PositionComponent with TapCallbacks {
-  final String label;
+class _OverlayButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
 
   _OverlayButton({
-    required this.label,
+    required Sprite sprite,
     required Vector2 position,
     required this.onPressed,
-  }) {
-    this.position = position;
-    size = Vector2(80, 40);
-    anchor = Anchor.center;
-  }
-
-  @override
-  Future<void> onLoad() async {
-    // Button background
-    add(
-      RectangleComponent(
-        size: size,
-        paint: Paint()..color = const Color.fromARGB(255, 200, 121, 3),
-        anchor: Anchor.topLeft,
-      ),
-    );
-
-    // Button text
-    add(
-      TextComponent(
-        text: label,
-        position: Vector2(size.x / 2, size.y / 2),
-        anchor: Anchor.center,
-        textRenderer: TextPaint(
-          style: const TextStyle(
-            fontSize: 18,
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
+    Vector2? size,
+  }) : super(
+         sprite: sprite,
+         position: position,
+         size: size ?? Vector2(140, 70),
+         anchor: Anchor.center,
+       );
 
   @override
   void onTapDown(TapDownEvent event) {
-    onPressed();
-    removeFromParent();
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
+
+    // Arcade bounce effect
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.05, 1.05),
+          EffectController(duration: 0.08, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }

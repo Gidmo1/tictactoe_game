@@ -24,6 +24,9 @@ dependencies:
   firebase_ui_auth: ^3.0.0
   firebase_ui_oauth_facebook: ^2.0.0
   font_awesome_flutter: ^10.6.0
+  cloud_functions: ^6.0.2
+  get_it: ^8.2.0
+  shared_preferences: ^2.5.3
 
   
 
@@ -51,6 +54,8 @@ flutter:
     - assets/images/restart.png
     - assets/images/notifications.png
     - assets/images/return.png
+    - assets/images/yes.png
+    - assets/images/no.png
     - assets/images/toggle_leftb.png
     - assets/images/toggle_rightb.png
     - assets/images/playscreen.png
@@ -63,10 +68,15 @@ flutter:
     - assets/images/trophy_silver.png
     - assets/images/trophy_bronze.png
     - assets/images/confirmation_overlay.png
+    - assets/images/confirmation_overlay_message.png
     - assets/images/quick_match.png
     - assets/images/global_leaderboard.png
     - assets/images/league_leaderboard.png
     - assets/images/leaderboard.png
+    - assets/images/confetti.png
+    - assets/images/baloon.png
+    - assets/images/arrow_right.png
+    - assets/images/arrow_left.png
     - assets/images/toggle_right.png
     - assets/images/settings_page.png
     - assets/images/scoreboard.png
@@ -78,6 +88,7 @@ flutter:
     - assets/images/cancel.png
     - assets/images/joinatournament.png
     - assets/images/leaderboard_background.png
+    - assets/images/profile_background.png
     - assets/images/Bronze I.png
     - assets/images/Silver II.png
     - assets/images/Gold III.png
@@ -86,6 +97,8 @@ flutter:
     - assets/images/privacy_edit.png
     - assets/images/remove_ads.png
     - assets/images/reset.png
+    - assets/images/home.png
+    - assets/images/next.png
     - assets/images/profile.png
     - assets/images/vsfriend.png
     - assets/images/vscomputer.png
@@ -96,6 +109,8 @@ flutter:
     - assets/audio/lose.wav
     - assets/audio/win.wav
     - assets/audio/tap.wav
+    - assets/audio/button.wav
+    - assets/audio/background_music.mp3
 
 # In this "flutter" section, each entry in this list should have a
 # path to an asset, like an image or font.

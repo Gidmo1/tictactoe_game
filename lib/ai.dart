@@ -3,160 +3,86 @@ import 'dart:math';
 class TicTacToeAI {
   final Random _random = Random();
 
-  // Easy Difficulty: easy to play with,can win easily. Beginners can use this
-  List<int> getMove(List<List<String>> board) {
-    final emptyCells = <List<int>>[];
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 3; col++) {
-        if (board[row][col] == '') {
-          emptyCells.add([row, col]);
-        }
-      }
-    }
-    if (emptyCells.isEmpty) return [-1, -1];
-    return emptyCells[_random.nextInt(emptyCells.length)];
-  }
+  List<int> getMoveForLevel(
+    List<List<String>> board,
+    int level,
+    String aiPlayer,
+    String humanPlayer,
+  ) {
+    final empties = _emptyCells(board);
+    if (empties.isEmpty) return [-1, -1];
 
-  // Medium Difficulty: blocks player win, tries to win but is still beatable
-  List<int> getMediumMove(List<List<String>> board, String human, String ai) {
-    // less percentage of choosing a random grid instead of blocking win
-    if (_random.nextDouble() < 0.3) {
-      return getMove(board);
+    // AI mistake chance (based on level)
+    final mistakeChance = _getMistakeChance(level);
+
+    // Decide whether AI will play dumb or smart
+    if (_random.nextDouble() < mistakeChance) {
+      return _randomMove(board); // make a dumb move
     }
-    // Play smart
-    // Block player win
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 3; col++) {
-        if (board[row][col] == '') {
-          board[row][col] = human;
-          if (_isWinner(board, human)) {
-            board[row][col] = '';
-            return [row, col];
-          }
-          board[row][col] = '';
-        }
-      }
-    }
-    // Try to win
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 3; col++) {
-        if (board[row][col] == '') {
-          board[row][col] = ai;
-          if (_isWinner(board, ai)) {
-            board[row][col] = '';
-            return [row, col];
-          }
-          board[row][col] = '';
-        }
-      }
-    }
-    // Prioritize centers
+
+    // Try to win or block, else random
+    final winMove = _findWinningMove(board, aiPlayer);
+    if (winMove != null) return winMove;
+
+    final blockMove = _findWinningMove(board, humanPlayer);
+    if (blockMove != null) return blockMove;
+
+    // Try center
     if (board[1][1] == '') return [1, 1];
-    // Prioritize corners
+
+    // Try corners
     final corners = [
       [0, 0],
       [0, 2],
       [2, 0],
       [2, 2],
     ];
+    corners.shuffle(_random);
     for (var c in corners) {
       if (board[c[0]][c[1]] == '') return c;
     }
-    // Random
-    return getMove(board);
+
+    // Otherwise random
+    return _randomMove(board);
   }
 
-  // Hard AI: unbeatable using minimax, randomizes among best moves, prioritizes center/corners
-  List<int> getHardMove(List<List<String>> board, String human, String ai) {
-    int bestScore = -1000;
-    List<List<int>> bestMoves = [];
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 3; col++) {
-        if (board[row][col] == '') {
-          board[row][col] = ai;
-          int score = _minimax(board, 0, false, human, ai);
-          board[row][col] = '';
-          if (score > bestScore) {
-            bestScore = score;
-            bestMoves = [
-              [row, col],
-            ];
-          } else if (score == bestScore) {
-            bestMoves.add([row, col]);
-          }
-        }
+  // ---------------------------
+  // HELPERS
+  // ---------------------------
+
+  List<List<int>> _emptyCells(List<List<String>> board) {
+    final empties = <List<int>>[];
+    for (int r = 0; r < 3; r++) {
+      for (int c = 0; c < 3; c++) {
+        if (board[r][c] == '') empties.add([r, c]);
       }
     }
-    // Prioritize center/corners among best moves
-    final priorities = [
-      [1, 1],
-      [0, 0],
-      [0, 2],
-      [2, 0],
-      [2, 2],
-    ];
-    for (var p in priorities) {
-      for (var m in bestMoves) {
-        if (m[0] == p[0] && m[1] == p[1]) {
-          return p;
-        }
-      }
-    }
-    // Randomize among best moves
-    if (bestMoves.isNotEmpty) {
-      return bestMoves[_random.nextInt(bestMoves.length)];
-    }
-    return [-1, -1];
+    return empties;
   }
 
-  int _minimax(
-    List<List<String>> board,
-    int depth,
-    bool isMax,
-    String human,
-    String ai,
-  ) {
-    if (_isWinner(board, ai)) return 10 - depth;
-    if (_isWinner(board, human)) return depth - 10;
-    if (_isDraw(board)) return 0;
-    if (isMax) {
-      int best = -1000;
-      for (int row = 0; row < 3; row++) {
-        for (int col = 0; col < 3; col++) {
-          if (board[row][col] == '') {
-            board[row][col] = ai;
-            best = max(best, _minimax(board, depth + 1, false, human, ai));
-            board[row][col] = '';
-          }
-        }
-      }
-      return best;
-    } else {
-      int best = 1000;
-      for (int row = 0; row < 3; row++) {
-        for (int col = 0; col < 3; col++) {
-          if (board[row][col] == '') {
-            board[row][col] = human;
-            best = min(best, _minimax(board, depth + 1, true, human, ai));
-            board[row][col] = '';
-          }
-        }
-      }
-      return best;
-    }
+  List<int> _randomMove(List<List<String>> board) {
+    final empties = _emptyCells(board);
+    if (empties.isEmpty) return [-1, -1];
+    return empties[_random.nextInt(empties.length)];
   }
 
-  bool _isDraw(List<List<String>> board) {
-    for (var row in board) {
-      for (var cell in row) {
-        if (cell == '') return false;
+  List<int>? _findWinningMove(List<List<String>> board, String player) {
+    for (int r = 0; r < 3; r++) {
+      for (int c = 0; c < 3; c++) {
+        if (board[r][c] == '') {
+          board[r][c] = player;
+          final isWin = _isWinner(board, player);
+          board[r][c] = '';
+          if (isWin) return [r, c];
+        }
       }
     }
-    return true;
+    return null;
   }
 
   bool _isWinner(List<List<String>> board, String player) {
-    final combos = [
+    const combos = [
+      // rows
       [
         [0, 0],
         [0, 1],
@@ -172,6 +98,7 @@ class TicTacToeAI {
         [2, 1],
         [2, 2],
       ],
+      // columns
       [
         [0, 0],
         [1, 0],
@@ -187,6 +114,7 @@ class TicTacToeAI {
         [1, 2],
         [2, 2],
       ],
+      // diagonals
       [
         [0, 0],
         [1, 1],
@@ -198,6 +126,7 @@ class TicTacToeAI {
         [2, 0],
       ],
     ];
+
     for (var combo in combos) {
       if (board[combo[0][0]][combo[0][1]] == player &&
           board[combo[1][0]][combo[1][1]] == player &&
@@ -206,5 +135,15 @@ class TicTacToeAI {
       }
     }
     return false;
+  }
+
+  double _getMistakeChance(int level) {
+    // Higher level = fewer mistakes
+    if (level <= 1) return 0.9; // 90% dumb
+    if (level <= 10) return 0.6;
+    if (level <= 20) return 0.4;
+    if (level <= 30) return 0.2;
+    if (level <= 50) return 0.1;
+    return 0.0; // level 50+ = no mistakes
   }
 }

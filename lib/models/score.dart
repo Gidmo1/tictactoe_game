@@ -4,6 +4,7 @@ class Score {
   final int wins;
   final int losses;
   final int draws;
+  final int points;
 
   Score({
     required this.playerId,
@@ -11,6 +12,7 @@ class Score {
     this.wins = 0,
     this.losses = 0,
     this.draws = 0,
+    this.points = 0,
   });
 
   Map<String, dynamic> toJson() {
@@ -20,6 +22,7 @@ class Score {
       'wins': wins,
       'losses': losses,
       'draws': draws,
+      'points': points,
     };
   }
 
@@ -30,6 +33,7 @@ class Score {
       wins: json['wins'] ?? 0,
       losses: json['losses'] ?? 0,
       draws: json['draws'] ?? 0,
+      points: json['points'] ?? 0,
     );
   }
 }

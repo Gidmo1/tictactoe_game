@@ -1,42 +1,110 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/score.dart';
 
 class ScoreService {
-  final CollectionReference _scoresCollection = FirebaseFirestore.instance
-      .collection('Scores');
-
-  Future<void> updateScore(Score score) async {
-    final docRef = _scoresCollection.doc(score.playerId);
-
-    await FirebaseFirestore.instance.runTransaction((transaction) async {
-      final snapshot = await transaction.get(docRef);
-
-      if (!snapshot.exists) {
-        // create a new score entry
-        transaction.set(docRef, score.toJson());
-      } else {
-        // update existing totals
-        final data = snapshot.data() as Map<String, dynamic>;
-        final existing = Score.fromJson(data);
-
-        final updated = Score(
-          playerId: score.playerId,
-          playerName: score.playerName,
-          wins: existing.wins + score.wins,
-          losses: existing.losses + score.losses,
-          draws: existing.draws + score.draws,
-        );
-
-        transaction.update(docRef, updated.toJson());
+  // Save a score. If user is logged in, push to Firebase, if not, store locally on the user's device
+  Future<void> saveScore(Score score, {bool loggedIn = false}) async {
+    if (loggedIn) {
+      // Logged-in user, push to Firebase
+      try {
+        final callable = FirebaseFunctions.instanceFor(
+          region: 'us-central1',
+        ).httpsCallable('updateScore');
+        final result = await callable.call({
+          'playerId': score.playerId,
+          'result': _scoreResult(score),
+        });
+        print('Score updated successfully: ${result.data}');
+      } catch (e) {
+        print('Error saving score to Firebase: $e');
       }
-    });
+    } else {
+      // Guest user save locally in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'guest_score_${score.playerId}';
+
+      List<Map<String, dynamic>> scores = [];
+      final saved = prefs.getString(key);
+      if (saved != null) {
+        scores = List<Map<String, dynamic>>.from(json.decode(saved));
+      }
+
+      scores.add({
+        'wins': score.wins,
+        'draws': score.draws,
+        'losses': score.losses,
+        'points': score.points,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      await prefs.setString(key, json.encode(scores));
+      print('Guest score saved locally: $scores');
+    }
   }
 
-  Future<Score?> getScore(String playerId) async {
-    final doc = await _scoresCollection.doc(playerId).get();
-    if (doc.exists) {
-      return Score.fromJson(doc.data() as Map<String, dynamic>);
+  // Retrieve scores for a user
+  Future<List<Score>> getScores(
+    String playerId, {
+    bool loggedIn = false,
+  }) async {
+    if (loggedIn) {
+      try {
+        final callable = FirebaseFunctions.instanceFor(
+          region: 'us-central1',
+        ).httpsCallable('getScore');
+        final result = await callable.call({'playerId': playerId});
+        final data = result.data as Map<String, dynamic>;
+        return [Score.fromJson(data)];
+      } catch (e) {
+        print('Error fetching score: $e');
+        return [];
+      }
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'guest_score_$playerId';
+      final saved = prefs.getString(key);
+      if (saved != null) {
+        final list = List<Map<String, dynamic>>.from(json.decode(saved));
+        return list.map((e) => Score.fromJson(e)).toList();
+      }
+      return [];
     }
-    return null;
+  }
+
+  // Save and add sscores after sign in
+  Future<void> syncGuestScores(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs
+        .getKeys()
+        .where((k) => k.startsWith('guest_score_'))
+        .toList();
+
+    for (var key in keys) {
+      final saved = prefs.getString(key);
+      if (saved != null) {
+        final scores = List<Map<String, dynamic>>.from(json.decode(saved));
+        for (var s in scores) {
+          final score = Score(
+            playerId: userId,
+            playerName: s['playerName'] ?? 'Guest',
+            wins: s['wins'] ?? 0,
+            draws: s['draws'] ?? 0,
+            losses: s['losses'] ?? 0,
+            points: s['points'] ?? 0,
+          );
+          await saveScore(score, loggedIn: true);
+        }
+      }
+      await prefs.remove(key);
+    }
+    print('All guest scores moved to Firebase and local storage info cleared.');
+  }
+
+  String _scoreResult(Score score) {
+    if (score.wins > 0) return 'win';
+    if (score.draws > 0) return 'draw';
+    return 'loss';
   }
 }

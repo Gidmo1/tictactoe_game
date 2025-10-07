@@ -30,18 +30,18 @@ class PrivacyOptionsScreen extends Component
       ),
     );
 
-    final cancelSprite = await game.loadSprite('cancel.png');
+    final cancelSprite = await game.loadSprite('return.png');
     add(
       _CancelButton(
         sprite: cancelSprite,
-        position: Vector2(320, 20),
+        position: Vector2(10, 50),
         onPressed: () => game.router.pushReplacementNamed('settings'),
       ),
     );
 
     final privacyPolicySprite = await game.loadSprite('privacy_policy.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: privacyPolicySprite,
         position: Vector2(68, 200),
         onPressed: () => game.router.pushReplacementNamed(''),
@@ -50,7 +50,7 @@ class PrivacyOptionsScreen extends Component
 
     final dataAccessSprite = await game.loadSprite('data_access_request.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: dataAccessSprite,
         position: Vector2(68, 270),
         onPressed: () => game.router.pushNamed(''),
@@ -59,7 +59,7 @@ class PrivacyOptionsScreen extends Component
 
     final accountDeletionSprite = await game.loadSprite('account_deletion.png');
     add(
-      _ArcadeButton(
+      _PressdownButton(
         sprite: accountDeletionSprite,
         position: Vector2(68, 340),
         onPressed: () => game.router.pushNamed(''),
@@ -78,15 +78,15 @@ class _CancelButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     onPressed();
   }
 }
 
-// Generic arcade button with bounce effect
-class _ArcadeButton extends SpriteComponent with TapCallbacks {
+//Press down button
+class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
-  _ArcadeButton({
+  _PressdownButton({
     required Sprite sprite,
     required Vector2 position,
     required this.onPressed,
@@ -94,9 +94,9 @@ class _ArcadeButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
 
-    // Arcade bounce effect
+    //Press down effect
     add(
       SequenceEffect([
         ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),

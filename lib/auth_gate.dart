@@ -50,9 +50,21 @@ class _AuthGateState extends State<AuthGate> {
         children: [
           // Fullscreen background
           SizedBox.expand(
-            child: Image.asset('assets/background.png', fit: BoxFit.cover),
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color.fromARGB(255, 21, 59, 23),
+                    Color.fromARGB(255, 21, 59, 23),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+            ),
           ),
-          // Centered Facebook login button with flame-like style
+
+          // Centered Facebook login button
           Center(
             child: _loading
                 ? const CircularProgressIndicator(color: Colors.white)
@@ -65,14 +77,22 @@ class _AuthGateState extends State<AuthGate> {
                       ),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
-                          colors: [Color(0xFFFFA726), Color(0xFFFF7043)],
+                          colors: [
+                            Color.fromARGB(255, 8, 77, 203),
+                            Color.fromARGB(255, 8, 77, 203),
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.orangeAccent.withOpacity(0.7),
+                            color: const Color.fromARGB(
+                              255,
+                              8,
+                              77,
+                              203,
+                            ).withOpacity(0.7),
                             blurRadius: 16,
                             spreadRadius: 2,
                             offset: const Offset(0, 0),
@@ -81,14 +101,14 @@ class _AuthGateState extends State<AuthGate> {
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const FaIcon(
+                        children: const [
+                          FaIcon(
                             FontAwesomeIcons.facebook,
                             color: Colors.white,
                             size: 28,
                           ),
-                          const SizedBox(width: 16),
-                          const Text(
+                          SizedBox(width: 16),
+                          Text(
                             'Continue with Facebook',
                             style: TextStyle(
                               color: Colors.white,
@@ -96,7 +116,7 @@ class _AuthGateState extends State<AuthGate> {
                               fontSize: 18,
                               shadows: [
                                 Shadow(
-                                  color: Colors.deepOrange,
+                                  color: Color.fromARGB(255, 8, 77, 203),
                                   blurRadius: 8,
                                   offset: Offset(0, 2),
                                 ),
@@ -108,6 +128,8 @@ class _AuthGateState extends State<AuthGate> {
                     ),
                   ),
           ),
+
+          // Signed-in message
           if (_signedInName != null)
             Align(
               alignment: Alignment.bottomCenter,
@@ -116,7 +138,11 @@ class _AuthGateState extends State<AuthGate> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.check_circle, color: Colors.green, size: 28),
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 28,
+                    ),
                     const SizedBox(width: 12),
                     Text(
                       'Successfully signed in as $_signedInName',
