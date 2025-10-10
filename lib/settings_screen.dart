@@ -1,12 +1,12 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flame/components.dart';
+import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/tictactoe.dart';
-import 'package:flame/effects.dart';
 
 class SettingsScreen extends Component
     with HasGameReference<TicTacToeGame>, TapCallbacks {
@@ -14,10 +14,13 @@ class SettingsScreen extends Component
   static bool gameSoundOn = true;
   String? playerId;
 
+  // Sprites
   late Sprite toggleRightSprite;
   late Sprite toggleLeftSprite;
   late Sprite toggleRightBgSprite;
   late Sprite toggleLeftBgSprite;
+
+  // Components
   late SpriteComponent toggleBg;
   late _SoundToggleButton toggleButton;
 
@@ -25,37 +28,34 @@ class SettingsScreen extends Component
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // Load toggle sprites
+    // Load sprites
     toggleRightSprite = await game.loadSprite('toggle_right.png');
     toggleLeftSprite = await game.loadSprite('toggle_left.png');
     toggleRightBgSprite = await game.loadSprite('toggle_rightb.png');
     toggleLeftBgSprite = await game.loadSprite('toggle_leftb.png');
 
-    await _loadSoundState();
-
     // Background
-    final backgroundSprite = await game.loadSprite('background.png');
+    final bgSprite = await game.loadSprite('background.png');
     add(
       SpriteComponent(
-        sprite: backgroundSprite,
+        sprite: bgSprite,
         size: game.size,
         position: Vector2.zero(),
       ),
     );
 
-    // Settings page overlay
-    final settingsPageSprite = await game.loadSprite('settings_page.png');
+    // Settings panel
+    final panelSprite = await game.loadSprite('settings_page.png');
     add(
       SpriteComponent(
-        sprite: settingsPageSprite,
+        sprite: panelSprite,
         size: Vector2(370, 410),
         position: Vector2(6, 120),
       ),
     );
 
-    // Toggle background
+    // Toggle BG
     toggleBg = SpriteComponent(
-      sprite: buttonSoundOn ? toggleRightBgSprite : toggleLeftBgSprite,
       size: Vector2(60, 30),
       position: Vector2(305, 175),
       anchor: Anchor.center,
@@ -64,10 +64,10 @@ class SettingsScreen extends Component
 
     // Toggle button
     toggleButton = _SoundToggleButton(
-      leftBg: toggleLeftBgSprite,
-      rightBg: toggleRightBgSprite,
       leftSprite: toggleLeftSprite,
       rightSprite: toggleRightSprite,
+      leftBg: toggleLeftBgSprite,
+      rightBg: toggleRightBgSprite,
       position: Vector2(280, 174),
       size: Vector2(28, 28),
       minX: 274,
@@ -77,11 +77,12 @@ class SettingsScreen extends Component
         buttonSoundOn = on;
         gameSoundOn = on;
         toggleBg.sprite = on ? toggleRightBgSprite : toggleLeftBgSprite;
+
         await _saveSoundState();
+
         if (gameSoundOn) {
-          if (!FlameAudio.bgm.isPlaying) {
+          if (!FlameAudio.bgm.isPlaying)
             FlameAudio.bgm.play('background_music.mp3');
-          }
         } else {
           FlameAudio.bgm.stop();
         }
@@ -89,7 +90,7 @@ class SettingsScreen extends Component
     );
     add(toggleButton);
 
-    // Return button
+    // Buttons
     final returnSprite = await game.loadSprite('return.png');
     add(
       _ReturnButton(
@@ -99,7 +100,6 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Reset button
     final resetSprite = await game.loadSprite('reset.png');
     add(
       _ResetSprite(
@@ -109,7 +109,6 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Ads button
     final adsSprite = await game.loadSprite('remove_ads.png');
     add(
       _AdsSprite(
@@ -119,7 +118,6 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Privacy button
     final privacySprite = await game.loadSprite('privacy_edit.png');
     add(
       _PrivacySprite(
@@ -128,44 +126,27 @@ class SettingsScreen extends Component
         onPressed: () => game.router.pushNamed('privacy'),
       ),
     );
+
+    // Load saved state & sync visuals
+    await _loadSoundState();
   }
 
-  //For cloud function and guests
-  /*Future<void> _loadSoundState() async {
-    final user = FirebaseAuth.instance.currentUser;
-    playerId = user?.uid;
-
-    if (playerId != null) {
-      // Firestre cloud function
-      try {
-        final callable = FirebaseFunctions.instanceFor(
-          region: 'us-central1',
-        ).httpsCallable('getUserSettings');
-        final result = await callable.call({'playerId': playerId});
-        final data = result.data as Map<String, dynamic>? ?? {};
-        buttonSoundOn = data['buttonSoundOn'] ?? true;
-        gameSoundOn = data['gameSoundOn'] ?? true;
-        return;
-      } catch (e) {
-        print('Failed Cloud load, using defaults: $e');
-      }
-    }
-
-    // If network isn't stable, load with shared preferences
-    final prefs = await SharedPreferences.getInstance();
-    buttonSoundOn = prefs.getBool('buttonSoundOn') ?? true;
-    gameSoundOn = prefs.getBool('gameSoundOn') ?? true;
-  }*/
   Future<void> _loadSoundState() async {
     final prefs = await SharedPreferences.getInstance();
     buttonSoundOn = prefs.getBool('buttonSoundOn') ?? true;
     gameSoundOn = prefs.getBool('gameSoundOn') ?? true;
 
-    // Update visuals immediately
+    // Update toggle position and sprite immediately
     toggleBg.sprite = buttonSoundOn ? toggleRightBgSprite : toggleLeftBgSprite;
-    toggleButton.sprite = buttonSoundOn ? toggleRightSprite : toggleLeftSprite;
+    toggleButton.soundOn = buttonSoundOn;
+    double bgMin = toggleButton.minX + toggleButton.radius;
+    double bgMax = toggleButton.maxX - toggleButton.radius;
+    toggleButton.position.x = buttonSoundOn ? bgMax : bgMin;
+    toggleButton.sprite = buttonSoundOn
+        ? toggleButton.rightSprite
+        : toggleButton.leftSprite;
 
-    // Firestore sync in background (if logged in)
+    // Firestore sync in background
     final user = FirebaseAuth.instance.currentUser;
     playerId = user?.uid;
     if (playerId != null) {
@@ -174,25 +155,20 @@ class SettingsScreen extends Component
           .call({'playerId': playerId})
           .then((result) async {
             final data = result.data as Map<String, dynamic>? ?? {};
-            // Update local cache only if you want for next session
             final cloudButton = data['buttonSoundOn'] ?? buttonSoundOn;
             final cloudGame = data['gameSoundOn'] ?? gameSoundOn;
             await prefs.setBool('buttonSoundOn', cloudButton);
             await prefs.setBool('gameSoundOn', cloudGame);
           })
-          .catchError((e) {
-            print('Cloud load failed: $e');
-          });
+          .catchError((e) => print('Cloud load failed: $e'));
     }
   }
 
   Future<void> _saveSoundState() async {
     final prefs = await SharedPreferences.getInstance();
-    // Always save locally first
     await prefs.setBool('buttonSoundOn', buttonSoundOn);
     await prefs.setBool('gameSoundOn', gameSoundOn);
 
-    // Save to Firestore in background (if logged in)
     if (playerId != null) {
       FirebaseFunctions.instanceFor(region: 'us-central1')
           .httpsCallable('updateUserSettings')
@@ -201,9 +177,7 @@ class SettingsScreen extends Component
             'buttonSoundOn': buttonSoundOn,
             'gameSoundOn': gameSoundOn,
           })
-          .catchError((e) {
-            print('Cloud save failed: $e');
-          });
+          .catchError((e) => print('Cloud save failed: $e'));
     }
   }
 }
@@ -268,7 +242,7 @@ class _SoundToggleButton extends SpriteComponent with TapCallbacks {
   }
 }
 
-// The remaining buttons
+// Remaining buttons
 class _ResetSprite extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   _ResetSprite({
@@ -308,7 +282,7 @@ class _PrivacySprite extends SpriteComponent with TapCallbacks {
         ),
       ]),
     );
-    Future.delayed(Duration(milliseconds: 150), () => onPressed());
+    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }
 

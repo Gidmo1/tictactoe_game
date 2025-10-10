@@ -27,7 +27,7 @@ class EndMatchOverlay extends PositionComponent {
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
     }
 
-    // background sprite (centered)
+    // background sprite
     final bgSprite = await (gameRef?.loadSprite('confirmation_overlay.png'));
     if (bgSprite != null) {
       add(
@@ -77,7 +77,7 @@ class EndMatchOverlay extends PositionComponent {
       ),
     );
 
-    // Optional small details text (score or subtitle)
+    // Optional small details text
     add(
       TextComponent(
         text: didDraw
@@ -102,7 +102,7 @@ class EndMatchOverlay extends PositionComponent {
       ),
     );
 
-    // Home button (left-ish) — we place it on the overlay like top-left of overlay bottom area
+    // Home button
     final homeSprite = await (gameRef?.loadSprite('home.png'));
     if (homeSprite != null) {
       add(
@@ -118,7 +118,7 @@ class EndMatchOverlay extends PositionComponent {
       );
     }
 
-    // Next button (right-ish)
+    // Next button
     final nextSprite = await (gameRef?.loadSprite('next.png'));
     if (nextSprite != null) {
       add(

@@ -12,7 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/confirmation_overlay.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
 import 'package:tictactoe_game/settings_screen.dart';
-import 'package:tictactoe_game/tictactoe.dart';
 import 'ai.dart';
 import 'models/user.dart' as app_user;
 
@@ -22,7 +21,7 @@ class TicTacToeVsAI extends Component {
     return difficulties[Random().nextInt(difficulties.length)];
   }
 
-  /// Keep constructor signature same — caller may pass totalRounds / difficulty.
+  // Keep constructor signature same
   final int? totalRounds;
   late String difficulty;
 
@@ -75,7 +74,7 @@ class TicTacToeVsAI extends Component {
            ),
        difficulty = initialDifficulty ?? _randomDifficulty();
 
-  // treat null totalRounds as 1 (single-round match)
+  // treat null totalRounds as 1
   int get _effectiveTotalRounds => totalRounds ?? 1;
   String get _roundsLabel => '${_effectiveTotalRounds}';
 
@@ -136,7 +135,7 @@ class TicTacToeVsAI extends Component {
       );
     }
 
-    // Return (back) button that asks confirmation
+    // Return button that asks for confirmation
     add(
       _PressdownIconButton(
         imagePath: 'return.png',
@@ -153,28 +152,39 @@ class TicTacToeVsAI extends Component {
             flameGame.add(dim);
             late ConfirmationOverlay overlay;
             overlay = ConfirmationOverlay(
-              onYes: () {
-                // On yes - clear state if match not finished
-                final finished = (roundCount >= _effectiveTotalRounds);
-                if (!finished) {
-                  resetState();
+              onYes: () async {
+                //  Remove the overlay
+                overlay.removeFromParent();
+                dim.removeFromParent();
 
-                  // Clear the x and o on the board
-                  for (var cell in children.whereType<TicTacToeCell>()) {
-                    cell.markSprite?.removeFromParent();
-                    cell.markSprite = null;
-                  }
-
-                  // Reset displays
-                  scoreText.text = "$humanScore - $aiScore";
+                //  If game isn't over, record as loss
+                if (!gameOver) {
+                  saveScore("loss");
                 }
+
+                //  Reset game state
+                resetState();
+
+                //  Clear board visuals
+                for (var cell in children.whereType<TicTacToeCell>()) {
+                  cell.markSprite?.removeFromParent();
+                  cell.markSprite = null;
+                }
+
+                //  Reset score UI
+                scoreText.text = "$humanScore - $aiScore";
+
+                //  Clear confetti
+                confettiRunning = false;
+                for (var c in List.from(confettiPieces)) {
+                  c.removeFromParent();
+                }
+                confettiPieces.clear();
 
                 final router = (flameGame as dynamic).router;
                 router?.pushNamed('menu');
-
-                overlay.removeFromParent();
-                dim.removeFromParent();
               },
+
               onNo: () {
                 overlay.removeFromParent();
                 dim.removeFromParent();
@@ -244,7 +254,7 @@ class TicTacToeVsAI extends Component {
   void aiMove() {
     if (gameOver) return;
 
-    // Map difficulty to a numeric level for AI.dart
+    // Difficulty journey for AI
     int level;
     switch (difficulty) {
       case 'easy':
@@ -287,7 +297,7 @@ class TicTacToeVsAI extends Component {
   void endRound() {
     gameOver = true;
 
-    // treat single-round matches by using _effectiveTotalRounds
+    // single round matches
     final finished = (roundCount >= _effectiveTotalRounds);
 
     if (finished) {
@@ -324,12 +334,36 @@ class TicTacToeVsAI extends Component {
             onHome: () {
               dim.removeFromParent();
 
-              // Clear only X/O sprites, keep all scores and level progress
-              for (var cell in children.whereType<TicTacToeCell>()) {
+              // Advance difficulty (start next level)
+              _advanceDifficulty();
+
+              // Reset all logical data
+              humanScores[difficulty] = 0;
+              aiScores[difficulty] = 0;
+              roundCounts[difficulty] = 1;
+              boards[difficulty] = List.generate(3, (_) => List.filled(3, ''));
+
+              // Reset player state
+              gameOver = false;
+              currentPlayer = humanPlayer;
+
+              // Actually clear board visually
+              for (var cell in List.from(children.whereType<TicTacToeCell>())) {
                 cell.markSprite?.removeFromParent();
                 cell.markSprite = null;
               }
 
+              // Stop and clear confetti visuals too
+              confettiRunning = false;
+              for (var piece in List.from(confettiPieces)) {
+                piece.removeFromParent();
+              }
+              confettiPieces.clear();
+
+              // Update the score display
+              scoreText.text = "$humanScore - $aiScore";
+
+              // Go home
               final router = (flameGame as dynamic).router;
               router?.pushNamed('menu');
             },
@@ -430,7 +464,7 @@ class TicTacToeVsAI extends Component {
     }
   }
 
-  // Save queued guest scores after login
+  // Save guest scores after login
   Future<void> pushGuestScores() async {
     if (loggedInUser.id.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();

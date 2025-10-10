@@ -12,6 +12,7 @@ import 'package:tictactoe_game/vs_ai_board.dart';
 import 'firebase.dart';
 import 'board.dart';
 import 'competition_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_gate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -32,6 +33,20 @@ class TicTacToeGame extends FlameGame
     await super.onLoad();
     await Firebaseinit().initFirebase();
 
+    //  Load saved sound state early
+    final prefs = await SharedPreferences.getInstance();
+    SettingsScreen.buttonSoundOn = prefs.getBool('buttonSoundOn') ?? true;
+    SettingsScreen.gameSoundOn = prefs.getBool('gameSoundOn') ?? true;
+
+    //  Apply background music right away if needed
+    if (SettingsScreen.gameSoundOn) {
+      if (!FlameAudio.bgm.isPlaying) {
+        await FlameAudio.bgm.play('background_music.mp3');
+      } else {
+        await FlameAudio.bgm.resume();
+      }
+    }
+
     router = RouterComponent(
       initialRoute: 'menu',
       routes: {
@@ -43,11 +58,9 @@ class TicTacToeGame extends FlameGame
           final fbUser = FirebaseAuth.instance.currentUser;
 
           if (fbUser == null) {
-            // Not logged in — still allow offline play
             return TicTacToeVsAI();
           }
 
-          // Logged in — pass user info into the game
           final user = app_user.User(
             id: fbUser.uid,
             userName: fbUser.displayName ?? "Anonymous",
@@ -61,7 +74,6 @@ class TicTacToeGame extends FlameGame
 
           return TicTacToeVsAI(loggedInUser: user);
         }),
-
         'competition': Route(() => CompetitionScreen()),
         'privacy': Route(() => PrivacyOptionsScreen()),
       },
@@ -77,16 +89,6 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-
-    void playBackgroundMusic() {
-      if (SettingsScreen.buttonSoundOn) {
-        FlameAudio.bgm.play('background_music.mp3');
-      } else {
-        FlameAudio.bgm.stop();
-      }
-    }
-
-    playBackgroundMusic();
 
     final background = SpriteComponent()
       ..sprite = await game.loadSprite('background.png')
