@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
-import 'package:flame/game.dart';
+// debugPrint available via flutter/material.dart import above
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +21,8 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
   int wins = 0;
   int losses = 0;
   int draws = 0;
+  String league = 'bronze';
+  List<String> trophies = [];
 
   @override
   Future<void> onLoad() async {
@@ -51,7 +53,7 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(avatar);
 
-    // Load cached + online user info
+    // Load cached and online user info
     await _loadPlayerData();
 
     // Player name and stats
@@ -69,6 +71,22 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(nameText);
 
+    // League badge shown beside name (like a verified tick)
+    try {
+      String badgeAsset = 'Bronze I.png';
+      if (league.toLowerCase() == 'silver') badgeAsset = 'Silver II.png';
+      if (league.toLowerCase() == 'gold') badgeAsset = 'Gold III.png';
+      final badgeSprite = await game.loadSprite(badgeAsset);
+      final badge = SpriteComponent(
+        sprite: badgeSprite,
+        size: Vector2(40, 40),
+        // Nudge the badge slightly down so it aligns visually with name
+        position: Vector2(game.size.x / 2 + 110, 258),
+        anchor: Anchor.center,
+      );
+      add(badge);
+    } catch (_) {}
+
     statsText = TextComponent(
       text: 'W:$wins  L:$losses  D:$draws',
       position: Vector2(game.size.x / 2, 290),
@@ -83,6 +101,38 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(statsText);
 
+    // Trophies section
+    try {
+      if (trophies.isEmpty) {
+        final noTrophies = TextComponent(
+          text:
+              'No trophies yet. Play and win online matches to earn trophies!',
+          position: Vector2(game.size.x / 2, 330),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        );
+        add(noTrophies);
+      } else {
+        // Display trophies horizontally
+        final startX = game.size.x / 2 - (trophies.length * 48) / 2;
+        for (int i = 0; i < trophies.length; i++) {
+          final key = trophies[i];
+          try {
+            final tSprite = await game.loadSprite('$key.png');
+            final tc = SpriteComponent(
+              sprite: tSprite,
+              size: Vector2(44, 44),
+              position: Vector2(startX + i * 48, 340),
+              anchor: Anchor.topLeft,
+            );
+            add(tc);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
     final returnSprite = await game.loadSprite('return.png');
     returnButton = _ReturnButton(
       sprite: returnSprite,
@@ -92,11 +142,14 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     add(returnButton);
   }
 
+  // Music is controlled centrally by TicTacToeGame.handleRouteChange; no
+  // per-screen lifecycle hooks are needed here.
+
   Future<void> _loadPlayerData() async {
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
 
-    // Load cached data instantly
+    // Load saved data instantly
     playerName = prefs.getString('playerName') ?? 'Anonymous';
     wins = prefs.getInt('wins') ?? 0;
     losses = prefs.getInt('losses') ?? 0;
@@ -117,19 +170,37 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
           losses = data['losses'] ?? losses;
           draws = data['draws'] ?? draws;
 
-          // Save new data back to prefs
+          // Save new data back to shared preferences
           await prefs.setString('playerName', playerName);
           await prefs.setInt('wins', wins);
           await prefs.setInt('losses', losses);
           await prefs.setInt('draws', draws);
 
-          // Update screen text if components already loaded
-          if (statsText != null) {
-            statsText.text = 'W:$wins  L:$losses  D:$draws';
-          }
+          // Fetch persistent profile (league) and awards/trophies
+          try {
+            final profileDoc = await FirebaseFirestore.instance
+                .collection('playerProfiles')
+                .doc(user.uid)
+                .get();
+            if (profileDoc.exists) {
+              final pd = profileDoc.data()!;
+              league = (pd['league'] as String?) ?? league;
+            }
+
+            final awardsSnap = await FirebaseFirestore.instance
+                .collection('playerProfiles')
+                .doc(user.uid)
+                .collection('awards')
+                .get();
+            trophies = [];
+            for (final a in awardsSnap.docs) {
+              final ad = a.data();
+              if (ad['trophy'] != null) trophies.add(ad['trophy'] as String);
+            }
+          } catch (_) {}
         }
       } catch (e) {
-        print('Offline mode - using cached profile.');
+        debugPrint('Offline mode - using cached profile: $e');
       }
     }
   }

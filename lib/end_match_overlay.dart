@@ -1,7 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
-import 'package:flame/game.dart';
+// package:flame/game.dart import not required; components already provides types used here
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/settings_screen.dart';
@@ -22,7 +22,7 @@ class EndMatchOverlay extends PositionComponent {
 
   @override
   Future<void> onLoad() async {
-    final gameRef = findGame() as FlameGame?;
+    final gameRef = findGame();
     if (gameRef != null) {
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
     }
@@ -147,7 +147,7 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
   }) : super(
          sprite: sprite,
          position: position,
-         size: size ?? Vector2(120, 60),
+         size: size ?? Vector2(120, 50),
          anchor: Anchor.center,
        );
 

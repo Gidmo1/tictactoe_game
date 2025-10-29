@@ -143,7 +143,7 @@ class TicTacToeAI {
     if (level <= 10) return 0.6;
     if (level <= 20) return 0.4;
     if (level <= 30) return 0.2;
-    if (level <= 50) return 0.1;
+    if (level < 50) return 0.1;
     return 0.0; // level 50+ = no mistakes
   }
 }

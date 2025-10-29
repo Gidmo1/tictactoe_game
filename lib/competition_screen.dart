@@ -1,11 +1,20 @@
+import 'dart:io';
+import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
-import 'settings_screen.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'settings_screen.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'service/competition_service.dart';
+import 'models/competition.dart';
+// auth_gate removed from this screen; tournament flow shouldn't force sign-in here
 
-// Return button
+// ======= BUTTONS =======
+
 class _ReturnButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
 
@@ -28,7 +37,6 @@ class _ReturnButton extends SpriteComponent with TapCallbacks {
   }
 }
 
-// Pressdown button
 class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
 
@@ -47,7 +55,6 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    // Bounce effect
     add(
       SequenceEffect([
         ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
@@ -65,7 +72,61 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
   }
 }
 
-// Leaderboard Card
+// Simple text button (no external sprite) for the offline retry UI
+class _TextButton extends PositionComponent with TapCallbacks {
+  final VoidCallback onPressed;
+  final String text;
+  final double width;
+  final double height;
+
+  _TextButton({
+    required this.text,
+    required Vector2 position,
+    required this.onPressed,
+    this.width = 180,
+    this.height = 48,
+  }) : super(
+         position: position,
+         size: Vector2(width, height),
+         anchor: Anchor.center,
+       );
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    add(
+      RectangleComponent(size: size, paint: Paint()..color = Colors.blueAccent),
+    );
+    add(
+      TextComponent(
+        text: text,
+        position: Vector2(size.x / 2, size.y / 2),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
+    _bounce();
+    Future.delayed(const Duration(milliseconds: 150), onPressed);
+  }
+
+  void _bounce() {
+    add(ScaleEffect.to(Vector2(0.95, 0.95), EffectController(duration: 0.06)));
+  }
+}
+
+// ======= LEADERBOARD CARD =======
+
 class LeaderboardCardComponent extends PositionComponent {
   final int rank;
   final String name;
@@ -95,12 +156,9 @@ class LeaderboardCardComponent extends PositionComponent {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-
-    // Card background
     add(RectangleComponent(size: size, paint: Paint()..color = cardColor));
 
-    // Trophy
-    if (medalColor != null) {
+    if (medalColor != null && rank <= 3) {
       final trophySize = 28.0;
       add(
         SpriteComponent(
@@ -117,7 +175,6 @@ class LeaderboardCardComponent extends PositionComponent {
       );
     }
 
-    // Rank number
     add(
       TextComponent(
         text: '$rank',
@@ -127,13 +184,12 @@ class LeaderboardCardComponent extends PositionComponent {
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
-            color: medalColor ?? const Color.fromARGB(255, 255, 255, 255),
+            color: medalColor ?? Colors.white,
           ),
         ),
       ),
     );
 
-    // Circle avatar
     add(
       CircleComponent(
         radius: 20,
@@ -143,7 +199,6 @@ class LeaderboardCardComponent extends PositionComponent {
       ),
     );
 
-    // Player name
     add(
       TextComponent(
         text: name,
@@ -159,7 +214,6 @@ class LeaderboardCardComponent extends PositionComponent {
       ),
     );
 
-    // Score
     add(
       TextComponent(
         text: '$score XP',
@@ -176,6 +230,8 @@ class LeaderboardCardComponent extends PositionComponent {
     );
   }
 }
+
+// ======= SCROLLABLE LEADERBOARD =======
 
 class _ScrollableLeaderboardContainer extends PositionComponent
     with DragCallbacks {
@@ -198,7 +254,68 @@ class _ScrollableLeaderboardContainer extends PositionComponent
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    _buildInitialCards();
+    _buildCards();
+  }
+
+  void _buildCards() {
+    removeAll(children);
+    cardComponents.clear();
+
+    if (entries.isEmpty) {
+      add(
+        TextComponent(
+          text: 'No leaderboard data available.',
+          position: Vector2(width / 2, height / 2),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    for (int i = 0; i < entries.length; i++) {
+      final rank = i + 1;
+      final name = entries[i]['name'] ?? 'Player';
+      final score = entries[i]['score'] ?? 0;
+
+      final Color cardColor = rank <= 3
+          ? const Color.fromARGB(255, 74, 104, 67)
+          : const Color.fromARGB(255, 74, 104, 67);
+
+      final card = LeaderboardCardComponent(
+        rank: rank,
+        name: name,
+        score: score,
+        position: Vector2(0, i * cardHeight),
+        cardColor: cardColor,
+        textColor: Colors.white,
+        medalColor: rank <= 3
+            ? rank == 1
+                  ? Colors.yellow.shade700
+                  : rank == 2
+                  ? Colors.grey
+                  : const Color(0xFFCD7F32)
+            : null,
+        width: width,
+        height: cardHeight - 6,
+      );
+
+      cardComponents.add(card);
+      add(card);
+    }
+    _updateCardPositions();
+  }
+
+  void _updateCardPositions() {
+    for (int i = 0; i < cardComponents.length; i++) {
+      cardComponents[i].position = Vector2(0, i * cardHeight - scrollOffset);
+    }
   }
 
   @override
@@ -227,111 +344,202 @@ class _ScrollableLeaderboardContainer extends PositionComponent
     scrollOffset = scrollOffset.clamp(0, maxScroll).toDouble();
     _updateCardPositions();
   }
-
-  void _buildInitialCards() {
-    removeAll(children);
-    cardComponents.clear();
-    for (int i = 0; i < entries.length; i++) {
-      final rank = i + 1;
-      final name = entries[i]['name'] ?? 'Player';
-      final score = entries[i]['score'] is int
-          ? entries[i]['score'] as int
-          : int.tryParse(entries[i]['score'].toString()) ?? 0;
-
-      final Color cardColor = rank <= 3
-          ? const Color.fromARGB(255, 74, 104, 67)
-          : i % 2 == 0
-          ? const Color.fromARGB(255, 74, 104, 67)
-          : const Color.fromARGB(255, 74, 104, 67);
-
-      final card = LeaderboardCardComponent(
-        rank: rank,
-        name: name,
-        score: score,
-        position: Vector2(0, i * cardHeight),
-        cardColor: cardColor,
-        textColor: const Color.fromARGB(255, 255, 255, 255),
-        medalColor: rank <= 3
-            ? rank == 1
-                  ? Colors.yellow.shade700
-                  : rank == 2
-                  ? Colors.grey
-                  : const Color(0xFFCD7F32)
-            : null,
-        width: width,
-        height: cardHeight - 6,
-      );
-
-      cardComponents.add(card);
-      add(card);
-    }
-    _updateCardPositions();
-  }
-
-  void _updateCardPositions() {
-    for (int i = 0; i < cardComponents.length; i++) {
-      final card = cardComponents[i];
-      card.position = Vector2(0, i * cardHeight - scrollOffset);
-    }
-  }
 }
 
-// Competition Screen
+// ======= COMPETITION SCREEN =======
+
 class CompetitionScreen extends Component with HasGameReference {
+  List<Map<String, dynamic>> leaderboardEntries = [];
+  late SpriteComponent loadingIndicator;
+  final FirebaseFunctions functions = FirebaseFunctions.instance;
+  // Confetti state for award celebrations
+  bool confettiRunning = false;
+  final Random _random = Random();
+  final List<Component> _confettiPieces = [];
+
+  void _startConfetti() {
+    if (confettiRunning) return;
+    confettiRunning = true;
+
+    final size = game.size;
+
+    void spawnConfettiPiece() {
+      if (!confettiRunning) return;
+
+      final double confettiSize = 4 + _random.nextDouble() * 6;
+      final shapeType = _random.nextInt(3);
+      late PositionComponent confetti;
+      final paint = Paint()
+        ..color = Color.fromARGB(
+          255,
+          _random.nextInt(256),
+          _random.nextInt(256),
+          _random.nextInt(256),
+        );
+
+      switch (shapeType) {
+        case 0:
+          confetti = RectangleComponent(
+            size: Vector2(confettiSize, confettiSize * 1.5),
+            paint: paint,
+            position: Vector2(_random.nextDouble() * size.x, -10),
+            anchor: Anchor.center,
+          );
+          break;
+        case 1:
+          confetti = CircleComponent(
+            radius: confettiSize / 2,
+            paint: paint,
+            position: Vector2(_random.nextDouble() * size.x, -10),
+            anchor: Anchor.center,
+          );
+          break;
+        default:
+          confetti = PolygonComponent(
+            [
+              Vector2(0, 0),
+              Vector2(confettiSize, 0),
+              Vector2(confettiSize / 2, confettiSize),
+            ],
+            paint: paint,
+            position: Vector2(_random.nextDouble() * size.x, -10),
+            anchor: Anchor.center,
+          );
+      }
+
+      _confettiPieces.add(confetti);
+      add(confetti);
+
+      final fallDuration = 1.5 + _random.nextDouble() * 1.5;
+      confetti.add(
+        MoveEffect.to(
+          Vector2(confetti.x, size.y + 50),
+          EffectController(duration: fallDuration, curve: Curves.linear),
+          onComplete: () {
+            confetti.removeFromParent();
+            _confettiPieces.remove(confetti);
+          },
+        ),
+      );
+
+      confetti.add(
+        RotateEffect.by(
+          _random.nextDouble() * pi * 4,
+          EffectController(duration: fallDuration, curve: Curves.linear),
+        ),
+      );
+
+      Future.delayed(const Duration(milliseconds: 15), spawnConfettiPiece);
+    }
+
+    spawnConfettiPiece();
+
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      confettiRunning = false;
+    });
+  }
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // Background
     final bg = SpriteComponent()
       ..sprite = await game.loadSprite('leaderboard_background.png')
       ..size = game.size
       ..position = Vector2.zero();
     add(bg);
 
-    final goldSprite = await Sprite.load('Gold III_locked.png');
-    add(
-      SpriteComponent(
-        sprite: goldSprite,
-        size: Vector2(120, 120),
-        position: Vector2(300, 80),
-        anchor: Anchor.center,
-      ),
+    // Loading indicator
+    loadingIndicator = SpriteComponent()
+      ..sprite = await game.loadSprite('loading.png')
+      ..size = Vector2(60, 60)
+      ..position = game.size / 2
+      ..anchor = Anchor.center;
+    add(loadingIndicator);
+    loadingIndicator.add(
+      RotateEffect.by(6.28, EffectController(duration: 1, infinite: true)),
     );
 
-    final silverSprite = await Sprite.load('Silver II_locked.png');
-    add(
-      SpriteComponent(
-        sprite: silverSprite,
-        size: Vector2(110, 110),
-        position: Vector2(180, 90),
-        anchor: Anchor.center,
-      ),
-    );
+    // Internet check
+    bool online = true;
+    try {
+      final result = await InternetAddress.lookup(
+        'example.com',
+      ).timeout(const Duration(seconds: 4));
+      online = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } catch (_) {
+      online = false;
+    }
 
-    final bronzeSprite = await Sprite.load('Bronze I.png');
-    add(
-      SpriteComponent(
-        sprite: bronzeSprite,
-        size: Vector2(120, 120),
-        position: Vector2(60, 120),
-        anchor: Anchor.center,
-      ),
-    );
+    if (!online) {
+      remove(loadingIndicator);
 
-    // Scrollable leaderboard
+      final offlineText = TextComponent(
+        text: 'No internet connection.\nPlease check your connection.',
+        position: game.size / 2 - Vector2(0, 30),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      add(offlineText);
+
+      // Retry button below the message
+      late final _TextButton retryButton;
+      retryButton = _TextButton(
+        text: 'Retry',
+        position: (game.size / 2) + Vector2(0, 40),
+        onPressed: () async {
+          // Quick connectivity re-check
+          bool nowOnline = true;
+          try {
+            final result = await InternetAddress.lookup(
+              'example.com',
+            ).timeout(const Duration(seconds: 4));
+            nowOnline = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+          } catch (_) {
+            nowOnline = false;
+          }
+
+          if (nowOnline) {
+            // remove offline UI and continue
+            offlineText.removeFromParent();
+            retryButton.removeFromParent();
+            add(loadingIndicator);
+            await _buildLeaderboardUI();
+          }
+        },
+      );
+      add(retryButton);
+      return;
+    }
+
+    // If online, proceed to build the leaderboard UI
+    await _buildLeaderboardUI();
+  }
+
+  Future<void> _buildLeaderboardUI() async {
+    // Fetch leaderboard
+    leaderboardEntries = await _fetchTopPlayers(10); // top 10 now
+
+    remove(loadingIndicator);
+
     final leaderboardStartY = 120.0;
     final leaderboardHeight = game.size.y - leaderboardStartY - 180.0;
     add(
       _ScrollableLeaderboardContainer(
-        entries: dummyEntries,
+        entries: leaderboardEntries,
         width: game.size.x,
         height: leaderboardHeight,
         y: leaderboardStartY + 40,
       ),
     );
 
-    // Return button
+    // Return Button
     final returnSprite = await game.loadSprite('return.png');
     add(
       _ReturnButton(
@@ -340,54 +548,306 @@ class CompetitionScreen extends Component with HasGameReference {
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
-            final router = (flameGame as dynamic).router;
-            router?.pushNamed('menu');
+            (flameGame as dynamic).router?.pushNamed('menu');
           }
         },
       ),
     );
 
-    // Join Tournament button
+    // Join / Play Tournament Button
     final joinSprite = await game.loadSprite('joinatournament.png');
+    final playSprite = await game.loadSprite('play.png');
     final buttonWidth = 220.0;
     final buttonHeight = 56.0;
-    final buttonSpacing = 16.0;
-    final bottomStartY = game.size.y - buttonHeight * 2 - buttonSpacing - 30;
+    final bottomStartY = game.size.y - buttonHeight - 30;
 
-    // Join Tournament button
-    add(
-      _PressdownButton(
-        sprite: joinSprite,
-        position: Vector2(game.size.x / 2, bottomStartY + buttonHeight / 2),
-        size: Vector2(buttonWidth, buttonHeight),
-        onPressed: () {
-          //To route to tournament screen
-          final flameGame = findGame();
-          if (flameGame != null) {
-            final router = (flameGame as dynamic).router;
-            router?.pushNamed('lobby');
-          }
-        },
-      ),
+    final fb.User? fbUser = fb.FirebaseAuth.instance.currentUser;
+    final svc = CompetitionService();
+    final FirebaseFunctions functions = FirebaseFunctions.instanceFor(
+      region: 'us-central1',
     );
+    final weekId = svc.getCurrentWeekId();
+
+    bool userJoined = false;
+    if (fbUser != null) {
+      final entry = await svc.getUserEntry(weekId, fbUser.uid);
+      userJoined = entry != null;
+    }
+
+    // Determine current user's persistent league (default to bronze)
+    String userLeague = 'bronze';
+    try {
+      if (fbUser != null) {
+        final entry = await svc.getUserEntry(weekId, fbUser.uid);
+        if (entry != null && entry.league.isNotEmpty) {
+          userLeague = entry.league.toLowerCase();
+        } else {
+          // Try persistent profile as fallback
+          final profileSnap = await FirebaseFirestore.instance
+              .collection('playerProfiles')
+              .doc(fbUser.uid)
+              .get();
+          if (profileSnap.exists && profileSnap.data()?['league'] != null) {
+            userLeague = (profileSnap.data()?['league'] as String)
+                .toLowerCase();
+          }
+        }
+      }
+    } catch (_) {
+      userLeague = 'bronze';
+    }
+
+    // Medal sprites (use unlocked images if user's league matches or exceeds the medal tier)
+    final goldSprite = await Sprite.load(
+      userLeague == 'gold' ? 'Gold III.png' : 'Gold III_locked.png',
+    );
+    final silverSprite = await Sprite.load(
+      (userLeague == 'gold' || userLeague == 'silver')
+          ? 'Silver II.png'
+          : 'Silver II_locked.png',
+    );
+    final bronzeSprite = await Sprite.load('Bronze I.png');
+
+    addAll([
+      SpriteComponent(
+        sprite: goldSprite,
+        size: Vector2(120, 120),
+        position: Vector2(300, 80),
+        anchor: Anchor.center,
+      ),
+      SpriteComponent(
+        sprite: silverSprite,
+        size: Vector2(110, 110),
+        position: Vector2(180, 90),
+        anchor: Anchor.center,
+      ),
+      SpriteComponent(
+        sprite: bronzeSprite,
+        size: Vector2(120, 120),
+        position: Vector2(60, 120),
+        anchor: Anchor.center,
+      ),
+    ]);
+
+    // Check if current user has a new award for this week and show popup
+    if (fbUser != null) {
+      try {
+        final awardDoc = await FirebaseFirestore.instance
+            .collection('playerProfiles')
+            .doc(fbUser.uid)
+            .collection('awards')
+            .doc(weekId)
+            .get();
+        if (awardDoc.exists) {
+          final data = awardDoc.data();
+          if (data != null && data['read'] == false) {
+            final trophyKey = (data['trophy'] as String?) ?? 'trophy_gold';
+            final message =
+                (data['message'] as String?) ?? 'You won this week!';
+
+            // start confetti celebration
+            _startConfetti();
+
+            // Show award overlay: trophy sprite + message + Claim button
+            final trophySprite = await Sprite.load('${trophyKey}.png');
+            // Prefer a confirmation-style overlay if available, fall back to leaderboard background
+            Sprite overlaySprite;
+            try {
+              overlaySprite = await Sprite.load('confirmation_overlay.png');
+            } catch (_) {
+              overlaySprite = await Sprite.load('leaderboard_background.png');
+            }
+            final overlayBg = SpriteComponent()
+              ..sprite = overlaySprite
+              ..size = Vector2(game.size.x * 0.9, game.size.y * 0.5)
+              ..position = Vector2(game.size.x * 0.05, game.size.y * 0.2)
+              ..anchor = Anchor.topLeft
+              ..priority = 1000;
+
+            final trophyComp = SpriteComponent(
+              sprite: trophySprite,
+              size: Vector2(140, 140),
+              // place the trophy centered inside the overlay
+              position: Vector2(game.size.x / 2, game.size.y * 0.32),
+              anchor: Anchor.center,
+              priority: 1001,
+            );
+
+            final msg = TextComponent(
+              text: message,
+              textRenderer: TextPaint(
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+              ),
+              position: Vector2(game.size.x / 2, game.size.y * 0.45),
+              anchor: Anchor.center,
+              priority: 1001,
+            );
+
+            // Claim button (use claim.png). If the sprite is missing, fall back to a text button.
+            _PressdownButton? claimButtonRef;
+            try {
+              final claimSprite = await game.loadSprite('claim.png');
+              // place claim button at the bottom-middle of the overlay background
+              final claimY = overlayBg.position.y + overlayBg.size.y - 40;
+              final claimButtonLocal = _PressdownButton(
+                sprite: claimSprite,
+                position: Vector2(game.size.x / 2, claimY),
+                size: Vector2(180, 56),
+                onPressed: () async {
+                  try {
+                    // mark award read via Cloud Function to keep writes
+                    // server-authoritative and avoid client-side permission issues
+                    final callable = functions.httpsCallable('markAwardRead');
+                    await callable.call({
+                      'playerId': fbUser.uid,
+                      'weekId': weekId,
+                    });
+                  } catch (_) {}
+                  // remove overlay components
+                  overlayBg.removeFromParent();
+                  trophyComp.removeFromParent();
+                  msg.removeFromParent();
+                  claimButtonRef?.removeFromParent();
+                },
+              );
+              claimButtonRef = claimButtonLocal;
+              add(overlayBg);
+              add(trophyComp);
+              add(msg);
+              add(claimButtonLocal);
+            } catch (_) {
+              // Sprite load failed — use a simple text button as fallback
+              final claimY = overlayBg.position.y + overlayBg.size.y - 40;
+              final textBtn = _TextButton(
+                text: 'Claim',
+                position: Vector2(game.size.x / 2, claimY),
+                onPressed: () async {
+                  try {
+                    final callable = functions.httpsCallable('markAwardRead');
+                    await callable.call({
+                      'playerId': fbUser.uid,
+                      'weekId': weekId,
+                    });
+                  } catch (_) {}
+                  overlayBg.removeFromParent();
+                  trophyComp.removeFromParent();
+                  msg.removeFromParent();
+                },
+              );
+              add(overlayBg);
+              add(trophyComp);
+              add(msg);
+              add(textBtn);
+            }
+          }
+        }
+      } catch (e) {
+        print('Error checking award doc: $e');
+      }
+    }
+
+    // Helper to push tournament route
+    void goToTournament() {
+      final flameGame = findGame();
+      if (flameGame != null) {
+        (flameGame as dynamic).router?.pushNamed('tournament');
+      }
+    }
+
+    if (!userJoined) {
+      add(
+        _PressdownButton(
+          sprite: joinSprite,
+          position: Vector2(game.size.x / 2, bottomStartY),
+          size: Vector2(buttonWidth, buttonHeight),
+          onPressed: () async {
+            // Ensure auth is stabilized and token refreshed before calling the server
+            final user = await svc.ensureSignedIn();
+            if (user == null) {
+              try {
+                ScaffoldMessenger.of(game.buildContext!).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please sign in to join the tournament.'),
+                  ),
+                );
+              } catch (_) {}
+              return;
+            }
+
+            // Create entry and switch to Play
+            final entry = CompetitionEntry(
+              userId: user.uid,
+              userName: user.displayName ?? 'Player',
+              xp: 0,
+              wins: 0,
+              draws: 0,
+              losses: 0,
+              joinedAt: DateTime.now(),
+              league: '',
+            );
+            try {
+              await svc.joinTournament(weekId, entry);
+              // replace this button with Play: push tournament route
+              goToTournament();
+            } catch (e) {
+              // Show an unobtrusive error and allow the user to retry.
+              try {
+                ScaffoldMessenger.of(game.buildContext!).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Could not join tournament. Please try again.',
+                    ),
+                  ),
+                );
+              } catch (_) {}
+            }
+          },
+        ),
+      );
+    } else {
+      // show Play button in same position
+      add(
+        _PressdownButton(
+          sprite: playSprite,
+          position: Vector2(game.size.x / 2, bottomStartY),
+          size: Vector2(buttonWidth, buttonHeight),
+          onPressed: () async {
+            // User pressed Play: record an auto-search request in both the
+            // in-memory game flag and a short-lived SharedPreferences key so
+            // the Tournament screen reliably sees the request even if the
+            // game instance isn't accessible at the moment of navigation.
+            final flameGame = findGame();
+            if (flameGame != null) {
+              try {
+                (flameGame as dynamic).pendingTournamentAutoSearch = true;
+                debugPrint(
+                  'competition: Play pressed -> pendingTournamentAutoSearch set on game',
+                );
+              } catch (_) {}
+            }
+            // Note: we no longer persist a flag; the game-level in-memory
+            // flag is used and the router will trigger matchmaking on route
+            // change. This avoids lifecycle persistence issues.
+            debugPrint('competition: navigating to tournament route');
+            goToTournament();
+          },
+        ),
+      );
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchTopPlayers(int limit) async {
+    try {
+      final HttpsCallable callable = functions.httpsCallable(
+        'getLeaderboard',
+      ); // CF function
+      final result = await callable.call({'limit': limit});
+      final List<dynamic> data = result.data ?? [];
+      return data
+          .map((e) => {'name': e['name'] ?? 'Player', 'score': e['score'] ?? 0})
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 }
-
-// Ai players on the leaderboard incase there is not an human player available on the leaderboard
-final List<Map<String, dynamic>> dummyEntries = [
-  {'name': 'Alice', 'score': 1200},
-  {'name': 'Bob', 'score': 1100},
-  {'name': 'Charlie', 'score': 1050},
-  {'name': 'Diana', 'score': 1000},
-  {'name': 'Eve', 'score': 950},
-  /*{'name': 'Frank', 'score': 900},
-  {'name': 'Grace', 'score': 850},
-  {'name': 'Heidi', 'score': 800},
-  {'name': 'Ivan', 'score': 750},
-  {'name': 'Judy', 'score': 700},
-  {'name': 'Mallory', 'score': 650},
-  {'name': 'Niaj', 'score': 600},
-  {'name': 'Olivia', 'score': 550},
-  {'name': 'Peggy', 'score': 500},
-  {'name': 'Sybil', 'score': 450},*/
-];

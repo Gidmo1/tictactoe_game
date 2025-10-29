@@ -1,7 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
-import 'package:flame/game.dart';
+// package:flame/game.dart import not required; components already provides types used here
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/settings_screen.dart';
@@ -20,7 +20,7 @@ class ConfirmationOverlay extends PositionComponent {
 
   @override
   Future<void> onLoad() async {
-    final gameRef = findGame() as FlameGame?;
+    final gameRef = findGame();
     if (gameRef != null) {
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
     }
@@ -43,7 +43,7 @@ class ConfirmationOverlay extends PositionComponent {
         text:
             "Are you sure that you want to leave this mode? \n               You will lose the current game.",
         anchor: Anchor.topCenter,
-        position: Vector2(size.x / 2, 20),
+        position: Vector2(size.x / 2, 30),
         textRenderer: TextPaint(
           style: const TextStyle(
             color: Color(0xFFFFFFFF),
@@ -97,7 +97,7 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
   }) : super(
          sprite: sprite,
          position: position,
-         size: size ?? Vector2(140, 70),
+         size: size ?? Vector2(120, 50),
          anchor: Anchor.center,
        );
 
@@ -119,6 +119,9 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
         ),
       ]),
     );
-    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
+    // Call the handler immediately so UX is responsive; keep the visual
+    // effect running but do not delay action execution which previously
+    // caused perceived slowness.
+    onPressed();
   }
 }

@@ -1,4 +1,3 @@
-// vs_ai_board.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -16,39 +15,10 @@ import 'ai.dart';
 import 'models/user.dart' as app_user;
 
 class TicTacToeVsAI extends Component {
-  static String _randomDifficulty() {
-    const difficulties = ['easy', 'medium', 'hard'];
-    return difficulties[Random().nextInt(difficulties.length)];
-  }
-
-  // Keep constructor signature same
-  final int? totalRounds;
-  late String difficulty;
-
-  Map<String, List<List<String>>> boards = {
-    'easy': List.generate(3, (_) => List.filled(3, '')),
-    'medium': List.generate(3, (_) => List.filled(3, '')),
-    'hard': List.generate(3, (_) => List.filled(3, '')),
-  };
-  Map<String, int> humanScores = {'easy': 0, 'medium': 0, 'hard': 0};
-  Map<String, int> aiScores = {'easy': 0, 'medium': 0, 'hard': 0};
-  Map<String, int> roundCounts = {'easy': 1, 'medium': 1, 'hard': 1};
-
-  List<List<String>> get board => boards[difficulty]!;
-  int get humanScore => humanScores[difficulty]!;
-  int get aiScore => aiScores[difficulty]!;
-  int get roundCount => roundCounts[difficulty]!;
-
-  String humanPlayer = 'X';
-  String aiPlayer = 'O';
+  final String humanPlayer = 'X';
+  final String aiPlayer = 'O';
   String currentPlayer = 'X';
   bool gameOver = false;
-
-  late TextComponent scoreText;
-  late SpriteComponent humanIcon;
-  late SpriteComponent aiIcon;
-
-  late TicTacToeAI ai;
 
   final double cellWidth = 390 / 3;
   final double cellHeight = 321 / 3;
@@ -56,32 +26,30 @@ class TicTacToeVsAI extends Component {
   final double boardY = 318;
   app_user.User loggedInUser;
 
+  late TicTacToeAI ai;
+  late TextComponent scoreText;
+  late SpriteComponent humanIcon;
+  late SpriteComponent aiIcon;
+
   bool confettiRunning = false;
   final Random random = Random();
   final List<Component> confettiPieces = [];
 
-  TicTacToeVsAI({
-    app_user.User? loggedInUser,
-    String? initialDifficulty,
-    this.totalRounds,
-  }) : loggedInUser =
-           loggedInUser ??
-           app_user.User(
-             id: '',
-             userName: 'Guest',
-             providerId: '',
-             providerName: '',
-           ),
-       difficulty = initialDifficulty ?? _randomDifficulty();
+  List<List<String>> board = List.generate(3, (_) => List.filled(3, ''));
 
-  // treat null totalRounds as 1
-  int get _effectiveTotalRounds => totalRounds ?? 1;
-  String get _roundsLabel => '${_effectiveTotalRounds}';
+  TicTacToeVsAI({app_user.User? loggedInUser})
+    : loggedInUser =
+          loggedInUser ??
+          app_user.User(
+            id: '',
+            userName: 'Guest',
+            providerId: '',
+            providerName: '',
+          );
 
   @override
   Future<void> onLoad() async {
     ai = TicTacToeAI();
-    resetState();
 
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
 
@@ -107,7 +75,7 @@ class TicTacToeVsAI extends Component {
       add(aiIcon);
 
       scoreText = TextComponent(
-        text: "$humanScore - $aiScore",
+        text: "", // no scores
         position: Vector2(canvasSize.x / 2, 60),
         anchor: Anchor.center,
         textRenderer: TextPaint(
@@ -125,7 +93,7 @@ class TicTacToeVsAI extends Component {
     } catch (e) {
       add(
         TextComponent(
-          text: 'Error loading VS Computer screen',
+          text: 'Error loading VS Computer screen.',
           position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
           anchor: Anchor.center,
           textRenderer: TextPaint(
@@ -135,7 +103,7 @@ class TicTacToeVsAI extends Component {
       );
     }
 
-    // Return button that asks for confirmation
+    // Return button
     add(
       _PressdownIconButton(
         imagePath: 'return.png',
@@ -150,41 +118,22 @@ class TicTacToeVsAI extends Component {
               priority: 1000000000000,
             );
             flameGame.add(dim);
+
             late ConfirmationOverlay overlay;
             overlay = ConfirmationOverlay(
               onYes: () async {
-                //  Remove the overlay
                 overlay.removeFromParent();
                 dim.removeFromParent();
 
-                //  If game isn't over, record as loss
                 if (!gameOver) {
-                  saveScore("loss");
+                  await saveScore("loss");
                 }
 
-                //  Reset game state
-                resetState();
-
-                //  Clear board visuals
-                for (var cell in children.whereType<TicTacToeCell>()) {
-                  cell.markSprite?.removeFromParent();
-                  cell.markSprite = null;
-                }
-
-                //  Reset score UI
-                scoreText.text = "$humanScore - $aiScore";
-
-                //  Clear confetti
-                confettiRunning = false;
-                for (var c in List.from(confettiPieces)) {
-                  c.removeFromParent();
-                }
-                confettiPieces.clear();
+                restartBoard();
 
                 final router = (flameGame as dynamic).router;
                 router?.pushNamed('menu');
               },
-
               onNo: () {
                 overlay.removeFromParent();
                 dim.removeFromParent();
@@ -230,256 +179,93 @@ class TicTacToeVsAI extends Component {
 
   void makeMove(int row, int col, String player) {
     board[row][col] = player;
+
     final cell = children.whereType<TicTacToeCell>().firstWhere(
       (c) => c.row == row && c.col == col,
     );
     cell.mark(player);
 
     if (checkForWinner(player)) {
-      if (player == humanPlayer) {
-        humanScores[difficulty] = humanScore + 1;
-      } else {
-        aiScores[difficulty] = aiScore + 1;
-      }
       endRound();
     } else if (checkForDraw()) {
       endRound();
     } else {
       currentPlayer = (player == humanPlayer) ? aiPlayer : humanPlayer;
     }
-
-    scoreText.text = "$humanScore - $aiScore";
   }
 
   void aiMove() {
     if (gameOver) return;
 
-    // Difficulty journey for AI
-    int level;
-    switch (difficulty) {
-      case 'easy':
-        level = 5;
-        break;
-      case 'medium':
-        level = 15;
-        break;
-      case 'hard':
-        level = 40;
-        break;
-      default:
-        level = 50;
-    }
-
-    final move = ai.getMoveForLevel(board, level, humanPlayer, aiPlayer);
+    final move = ai.getMoveForLevel(board, 15, aiPlayer, humanPlayer);
     if (move[0] != -1) {
       makeMove(move[0], move[1], aiPlayer);
     }
   }
 
-  List<int> getAIMove(List<List<String>> board, String human, String aiPlayer) {
-    int level;
-    switch (difficulty) {
-      case 'easy':
-        level = 5;
-        break;
-      case 'medium':
-        level = 15;
-        break;
-      case 'hard':
-        level = 40;
-        break;
-      default:
-        level = 50;
-    }
-    return ai.getMoveForLevel(board, level, human, aiPlayer);
-  }
-
   void endRound() {
     gameOver = true;
 
-    // single round matches
-    final finished = (roundCount >= _effectiveTotalRounds);
-
-    if (finished) {
-      Future.delayed(const Duration(seconds: 1), () async {
-        String result;
-        if (humanScore > aiScore) {
-          result = "win";
-        } else if (aiScore > humanScore) {
-          result = "loss";
-        } else {
-          result = "draw";
-        }
-        await saveScore(result);
+    Future.delayed(const Duration(seconds: 1), () async {
+      String result;
+      if (checkForWinner(humanPlayer)) {
+        result = "win";
         _startConfetti();
+      } else if (checkForWinner(aiPlayer)) {
+        result = "loss";
+      } else {
+        result = "draw";
+      }
 
-        final flameGame = findGame();
-        if (flameGame != null) {
-          final dim = RectangleComponent(
-            size: flameGame.size,
-            paint: Paint()..color = Colors.black.withOpacity(0.6),
-            priority: 1000000000000,
-          );
-          flameGame.add(dim);
+      await saveScore(result);
 
-          final overlay = EndMatchOverlay(
-            didWin: humanScore > aiScore,
-            didDraw: (humanScore == aiScore),
-            onNext: () {
-              // Next = next level
-              dim.removeFromParent();
-              _advanceDifficulty();
-              _resetScoresAndBoard();
-            },
-            onHome: () {
-              dim.removeFromParent();
+      final flameGame = findGame();
+      if (flameGame != null) {
+        final dim = RectangleComponent(
+          size: flameGame.size,
+          paint: Paint()..color = Colors.black.withOpacity(0.6),
+          priority: 1000000000000,
+        );
+        flameGame.add(dim);
 
-              // Advance difficulty (start next level)
-              _advanceDifficulty();
+        final overlay = EndMatchOverlay(
+          didWin: result == "win",
+          didDraw: result == "draw",
+          onNext: () {
+            dim.removeFromParent();
+            restartBoard();
+          },
+          onHome: () {
+            dim.removeFromParent();
+            restartBoard();
+            final router = (flameGame as dynamic).router;
+            router?.pushNamed('menu');
+          },
+        );
 
-              // Reset all logical data
-              humanScores[difficulty] = 0;
-              aiScores[difficulty] = 0;
-              roundCounts[difficulty] = 1;
-              boards[difficulty] = List.generate(3, (_) => List.filled(3, ''));
-
-              // Reset player state
-              gameOver = false;
-              currentPlayer = humanPlayer;
-
-              // Actually clear board visually
-              for (var cell in List.from(children.whereType<TicTacToeCell>())) {
-                cell.markSprite?.removeFromParent();
-                cell.markSprite = null;
-              }
-
-              // Stop and clear confetti visuals too
-              confettiRunning = false;
-              for (var piece in List.from(confettiPieces)) {
-                piece.removeFromParent();
-              }
-              confettiPieces.clear();
-
-              // Update the score display
-              scoreText.text = "$humanScore - $aiScore";
-
-              // Go home
-              final router = (flameGame as dynamic).router;
-              router?.pushNamed('menu');
-            },
-          );
-
-          overlay.priority = 1000000000001;
-          flameGame.add(overlay);
-        }
-      });
-    } else {
-      roundCounts[difficulty] = roundCount + 1;
-      Future.delayed(const Duration(seconds: 1), restartBoard);
-    }
+        overlay.priority = 1000000000001;
+        flameGame.add(overlay);
+      }
+    });
   }
 
-  void _advanceDifficulty() {
-    if (difficulty == 'easy') {
-      difficulty = 'medium';
-    } else if (difficulty == 'medium') {
-      difficulty = 'hard';
-    } else {
-      difficulty = 'hard';
-    }
-  }
+  void restartBoard() {
+    board = List.generate(3, (_) => List.filled(3, ''));
+    gameOver = false;
+    currentPlayer = humanPlayer;
 
-  void _resetScoresAndBoard() {
-    // Reset scores and board for the new level
-    humanScores[difficulty] = 0;
-    aiScores[difficulty] = 0;
-    roundCounts[difficulty] = 1;
-
-    // Clear cell marks
     for (var cell in children.whereType<TicTacToeCell>()) {
       cell.markSprite?.removeFromParent();
       cell.markSprite = null;
     }
 
-    // Update UI
-    scoreText.text = "$humanScore - $aiScore";
-
-    gameOver = false;
-    currentPlayer = humanPlayer;
-
-    // stop confetti
     confettiRunning = false;
-    for (var c in confettiPieces) {
+    for (var c in List.from(confettiPieces)) {
       c.removeFromParent();
     }
     confettiPieces.clear();
-  }
 
-  // Save score to firebase or on device if user is guest
-  Future<void> saveScore(String result) async {
-    if (loggedInUser.id.isEmpty) {
-      // Guest mode
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'guest_scores_$difficulty';
-
-      List<Map<String, dynamic>> scores = [];
-      final saved = prefs.getString(key);
-      if (saved != null) {
-        scores = List<Map<String, dynamic>>.from(json.decode(saved));
-      }
-
-      scores.add({
-        'result': result,
-        'difficulty': difficulty,
-        'humanScore': humanScore,
-        'aiScore': aiScore,
-        'roundsPlayed': roundCount,
-        'totalRounds': _effectiveTotalRounds,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-      await prefs.setString(key, json.encode(scores));
-      return;
-    }
-
-    // Logged in user using cloud function
-    final dataToSend = {
-      'playerId': loggedInUser.id,
-      'result': result,
-      'mode': 'vs_ai',
-      'difficulty': difficulty,
-      'humanScore': humanScore,
-      'aiScore': aiScore,
-      'roundsPlayed': roundCount,
-      'totalRounds': _effectiveTotalRounds,
-      'timestamp': DateTime.now().toIso8601String(),
-    };
-
-    try {
-      final callable = FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('updateScore');
-      final functionResult = await callable.call(dataToSend);
-    } catch (e) {
-      print("Error saving score to Firebase: $e");
-    }
-  }
-
-  // Save guest scores after login
-  Future<void> pushGuestScores() async {
-    if (loggedInUser.id.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-
-    for (var diff in ['easy', 'medium', 'hard']) {
-      final key = 'guest_scores_$diff';
-      final saved = prefs.getString(key);
-      if (saved != null) {
-        final scores = List<Map<String, dynamic>>.from(json.decode(saved));
-        for (var s in scores) {
-          await saveScore(s['result']);
-        }
-        prefs.remove(key);
-      }
-    }
+    scoreText.text = "";
   }
 
   bool checkForWinner(String player) {
@@ -535,25 +321,6 @@ class TicTacToeVsAI extends Component {
 
   bool checkForDraw() {
     return board.every((row) => row.every((cell) => cell != ''));
-  }
-
-  void restartBoard() {
-    boards[difficulty] = List.generate(3, (_) => List.filled(3, ''));
-    gameOver = false;
-    currentPlayer = humanPlayer;
-
-    for (var cell in children.whereType<TicTacToeCell>()) {
-      cell.markSprite?.removeFromParent();
-      cell.markSprite = null;
-    }
-
-    scoreText.text = "$humanScore - $aiScore";
-
-    confettiRunning = false;
-    for (var c in confettiPieces) {
-      c.removeFromParent();
-    }
-    confettiPieces.clear();
   }
 
   void _startConfetti() {
@@ -638,32 +405,29 @@ class TicTacToeVsAI extends Component {
     });
   }
 
-  /*void restartMatch() {
-    for (var key in boards.keys) {
-      boards[key] = List.generate(3, (_) => List.filled(3, ''));
-      humanScores[key] = 0;
-      aiScores[key] = 0;
-      roundCounts[key] = 1;
+  Future<void> saveScore(String result) async {
+    if (loggedInUser.id.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'guest_score';
+      await prefs.setString(key, json.encode({'result': result}));
+      return;
     }
-    for (var cell in children.whereType<TicTacToeCell>()) {
-      cell.markSprite?.removeFromParent();
-      cell.markSprite = null;
-    }
-    currentPlayer = humanPlayer;
-    gameOver = false;
 
-    scoreText.text = "$humanScore - $aiScore";
-  }*/
+    final dataToSend = {
+      'playerId': loggedInUser.id,
+      'result': result,
+      'mode': 'vs_ai',
+      'timestamp': DateTime.now().toIso8601String(),
+    };
 
-  void resetState() {
-    for (var key in boards.keys) {
-      boards[key] = List.generate(3, (_) => List.filled(3, ''));
-      humanScores[key] = 0;
-      aiScores[key] = 0;
-      roundCounts[key] = 1;
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('updateScore');
+      await callable.call(dataToSend);
+    } catch (e) {
+      print("Error saving score to Firebase: $e");
     }
-    currentPlayer = humanPlayer;
-    gameOver = false;
   }
 }
 
@@ -682,9 +446,16 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    event.handled = true;
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
-    (parent as TicTacToeVsAI).handleTap(row, col);
+    try {
+      if (parent is TicTacToeVsAI) {
+        final vs = parent as TicTacToeVsAI;
+        if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+        event.handled = true;
+        vs.handleTap(row, col);
+      }
+    } catch (e, st) {
+      print('Error handling TicTacToeCell tap: $e\n$st');
+    }
   }
 
   void mark(String player) async {

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/score.dart';
 
 class ScoreService {
@@ -9,6 +11,21 @@ class ScoreService {
     if (loggedIn) {
       // Logged-in user, push to Firebase
       try {
+        // Ensure token is fresh before calling server
+        try {
+          final user = fb.FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            await user.getIdToken(true);
+            try {
+              await fb.FirebaseAuth.instance
+                  .idTokenChanges()
+                  .firstWhere((u) => u?.uid == user.uid)
+                  .timeout(const Duration(seconds: 2));
+            } catch (_) {}
+          }
+        } catch (e) {
+          debugPrint('Token refresh failed before saveScore: $e');
+        }
         final callable = FirebaseFunctions.instanceFor(
           region: 'us-central1',
         ).httpsCallable('updateScore');
@@ -16,9 +33,9 @@ class ScoreService {
           'playerId': score.playerId,
           'result': _scoreResult(score),
         });
-        print('Score updated successfully: ${result.data}');
+        debugPrint('Score updated successfully: ${result.data}');
       } catch (e) {
-        print('Error saving score to Firebase: $e');
+        debugPrint('Error saving score to Firebase: $e');
       }
     } else {
       // Guest user save locally in SharedPreferences
@@ -40,7 +57,7 @@ class ScoreService {
       });
 
       await prefs.setString(key, json.encode(scores));
-      print('Guest score saved locally: $scores');
+      debugPrint('Guest score saved locally: $scores');
     }
   }
 
@@ -58,7 +75,7 @@ class ScoreService {
         final data = result.data as Map<String, dynamic>;
         return [Score.fromJson(data)];
       } catch (e) {
-        print('Error fetching score: $e');
+        debugPrint('Error fetching score: $e');
         return [];
       }
     } else {
@@ -99,7 +116,9 @@ class ScoreService {
       }
       await prefs.remove(key);
     }
-    print('All guest scores moved to Firebase and local storage info cleared.');
+    debugPrint(
+      'All guest scores moved to Firebase and local storage info cleared.',
+    );
   }
 
   String _scoreResult(Score score) {

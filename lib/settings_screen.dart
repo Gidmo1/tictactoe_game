@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
@@ -44,7 +45,7 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Settings panel
+    // Settings background
     final panelSprite = await game.loadSprite('settings_page.png');
     add(
       SpriteComponent(
@@ -54,7 +55,7 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Toggle BG
+    // Toggle Background
     toggleBg = SpriteComponent(
       size: Vector2(60, 30),
       position: Vector2(305, 175),
@@ -80,11 +81,17 @@ class SettingsScreen extends Component
 
         await _saveSoundState();
 
-        if (gameSoundOn) {
-          if (!FlameAudio.bgm.isPlaying)
-            FlameAudio.bgm.play('background_music.mp3');
-        } else {
-          FlameAudio.bgm.stop();
+        // Use the game's centralized music API so only menu/profile screens
+        // play music and we avoid direct FlameAudio calls scattered around.
+        try {
+          final g = game;
+          if (gameSoundOn) {
+            g.playMenuMusic();
+          } else {
+            g.stopMenuMusic();
+          }
+        } catch (_) {
+          // ignore if cast fails
         }
       },
     );
@@ -150,17 +157,28 @@ class SettingsScreen extends Component
     final user = FirebaseAuth.instance.currentUser;
     playerId = user?.uid;
     if (playerId != null) {
-      FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('getUserSettings')
-          .call({'playerId': playerId})
-          .then((result) async {
-            final data = result.data as Map<String, dynamic>? ?? {};
-            final cloudButton = data['buttonSoundOn'] ?? buttonSoundOn;
-            final cloudGame = data['gameSoundOn'] ?? gameSoundOn;
-            await prefs.setBool('buttonSoundOn', cloudButton);
-            await prefs.setBool('gameSoundOn', cloudGame);
-          })
-          .catchError((e) => print('Cloud load failed: $e'));
+      try {
+        final result = await FirebaseFunctions.instanceFor(
+          region: 'us-central1',
+        ).httpsCallable('getUserSettings').call({'playerId': playerId});
+        final data = result.data as Map<String, dynamic>? ?? {};
+        final cloudButton = data['buttonSoundOn'] ?? buttonSoundOn;
+        final cloudGame = data['gameSoundOn'] ?? gameSoundOn;
+        await prefs.setBool('buttonSoundOn', cloudButton);
+        await prefs.setBool('gameSoundOn', cloudGame);
+        // after syncing, ensure music state matches current route
+        try {
+          final g = game;
+          if (cloudGame &&
+              (g.currentRoute == 'menu' || g.currentRoute == 'profile')) {
+            g.playMenuMusic();
+          } else {
+            g.stopMenuMusic();
+          }
+        } catch (_) {}
+      } catch (e) {
+        debugPrint('Cloud load failed: $e');
+      }
     }
   }
 
@@ -170,14 +188,17 @@ class SettingsScreen extends Component
     await prefs.setBool('gameSoundOn', gameSoundOn);
 
     if (playerId != null) {
-      FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('updateUserSettings')
-          .call({
-            'playerId': playerId,
-            'buttonSoundOn': buttonSoundOn,
-            'gameSoundOn': gameSoundOn,
-          })
-          .catchError((e) => print('Cloud save failed: $e'));
+      try {
+        await FirebaseFunctions.instanceFor(
+          region: 'us-central1',
+        ).httpsCallable('updateUserSettings').call({
+          'playerId': playerId,
+          'buttonSoundOn': buttonSoundOn,
+          'gameSoundOn': gameSoundOn,
+        });
+      } catch (e) {
+        debugPrint('Cloud save failed: $e');
+      }
     }
   }
 }
@@ -254,7 +275,20 @@ class _ResetSprite extends SpriteComponent with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    onPressed();
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.05, 1.05),
+          EffectController(duration: 0.08, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }
 
@@ -297,7 +331,20 @@ class _AdsSprite extends SpriteComponent with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    onPressed();
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.05, 1.05),
+          EffectController(duration: 0.08, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }
 
@@ -312,6 +359,19 @@ class _ReturnButton extends SpriteComponent with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    onPressed();
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.05, 1.05),
+          EffectController(duration: 0.08, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }

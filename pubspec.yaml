@@ -25,8 +25,10 @@ dependencies:
   firebase_ui_oauth_facebook: ^2.0.0
   font_awesome_flutter: ^10.6.0
   cloud_functions: ^6.0.2
-  get_it: ^8.2.0
   shared_preferences: ^2.5.3
+  url_launcher: ^6.3.0
+  app_links: ^6.4.1
+  connectivity_plus: ^4.0.0
 
   
 
@@ -37,6 +39,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flame_test: ^2.0.3
   flutter_lints: ^6.0.0
 
 flutter:
@@ -54,6 +57,7 @@ flutter:
     - assets/images/restart.png
     - assets/images/notifications.png
     - assets/images/return.png
+    - assets/images/loading.png
     - assets/images/yes.png
     - assets/images/no.png
     - assets/images/toggle_leftb.png
@@ -67,6 +71,7 @@ flutter:
     - assets/images/trophy_gold.png
     - assets/images/trophy_silver.png
     - assets/images/trophy_bronze.png
+    - assets/images/claim.png
     - assets/images/confirmation_overlay.png
     - assets/images/confirmation_overlay_message.png
     - assets/images/quick_match.png

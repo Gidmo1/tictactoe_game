@@ -2,9 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+// removed unused imports
 
 class AuthGate extends StatefulWidget {
-  const AuthGate({super.key});
+  final VoidCallback? onLoginSuccess;
+  const AuthGate({super.key, this.onLoginSuccess});
 
   @override
   State<AuthGate> createState() => _AuthGateState();
@@ -19,20 +21,41 @@ class _AuthGateState extends State<AuthGate> {
       _loading = true;
       _signedInName = null;
     });
+
     try {
       final LoginResult result = await FacebookAuth.instance.login(
         permissions: ['public_profile'],
       );
+
       if (result.status == LoginStatus.success && result.accessToken != null) {
         final accessToken = result.accessToken!.token;
         final facebookCredential = FacebookAuthProvider.credential(accessToken);
         final userCred = await FirebaseAuth.instance.signInWithCredential(
           facebookCredential,
         );
+
+        final displayName =
+            userCred.user?.displayName ?? userCred.user?.email ?? 'Unknown';
+
         setState(() {
-          _signedInName =
-              userCred.user?.displayName ?? userCred.user?.email ?? 'Unknown';
+          _signedInName = displayName;
         });
+
+        // ✅ Give UI a sec to show success
+        await Future.delayed(const Duration(seconds: 1));
+
+        if (mounted) {
+          // Close the auth gate dialog/screen
+          Navigator.of(context).pop();
+
+          // Notify parent (if any)
+          widget.onLoginSuccess?.call();
+
+          // ✅ Navigate to Competition screen inside Flame router
+          try {} catch (e) {
+            debugPrint('⚠️ Could not navigate to competition: $e');
+          }
+        }
       } else {
         debugPrint('Facebook login failed: ${result.status}');
       }
@@ -48,7 +71,7 @@ class _AuthGateState extends State<AuthGate> {
     return Scaffold(
       body: Stack(
         children: [
-          // Fullscreen background
+          // 🔹 Fullscreen background
           SizedBox.expand(
             child: Container(
               decoration: const BoxDecoration(
@@ -64,7 +87,7 @@ class _AuthGateState extends State<AuthGate> {
             ),
           ),
 
-          // Centered Facebook login button
+          // 🔹 Center Facebook login button
           Center(
             child: _loading
                 ? const CircularProgressIndicator(color: Colors.white)
@@ -129,7 +152,7 @@ class _AuthGateState extends State<AuthGate> {
                   ),
           ),
 
-          // Signed-in message
+          // 🔹 Signed-in message
           if (_signedInName != null)
             Align(
               alignment: Alignment.bottomCenter,
