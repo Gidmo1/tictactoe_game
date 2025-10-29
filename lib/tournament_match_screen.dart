@@ -22,7 +22,7 @@ class TournamentMatchScreen extends Component {
 
     // Detect if this view was opened by a user who already joined the
     // tournament. If the Competition screen requested matchmaking,
-    // we'll auto-start the search.
+    // then the game will start auto searcg
     final flameGame = findGame();
     final bool joinedView =
         flameGame != null &&
@@ -31,14 +31,12 @@ class TournamentMatchScreen extends Component {
         flameGame != null &&
         ((flameGame as dynamic).pendingTournamentAutoSearch == true);
 
-    // Also consult the short-lived SharedPreferences flag set by the
-    // Competition screen as a more reliable signal across navigation.
     bool prefsAutoSearch = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       prefsAutoSearch = prefs.getBool('pendingTournamentAutoSearch') ?? false;
       if (prefsAutoSearch) {
-        // Clear it immediately so it does not persist across later visits.
+        // Clear it immediately
         await prefs.remove('pendingTournamentAutoSearch');
       }
     } catch (_) {}
@@ -80,9 +78,8 @@ class TournamentMatchScreen extends Component {
     );
     add(returnButton);
 
-    // Center Play button (hidden if this is the informational view for a
-    // returning player who already joined the tournament). If autoSearch is
-    // requested we hide the button and begin matchmaking immediately.
+    // Center Play button. If Search is
+    // requested we hide the button and begin matchmaking immediately
     if (!joinedView && !autoSearch) {
       final playButton = PlayButton(
         imagePath: 'play.png',
@@ -182,7 +179,7 @@ class TournamentMatchScreen extends Component {
               } else {
                 g.myPlayerSymbol = 'X';
               }
-              // Navigate to match/invite screen
+              // Navigate to match screen
               _isSearching = false;
               _restorePlayControl();
               g.router.pushNamed('invite');
@@ -207,7 +204,7 @@ class TournamentMatchScreen extends Component {
     }
   }
 
-  /// Public entrypoint so external controllers can trigger matchmaking.
+  // Public entrypoint so external controllers can trigger matchmaking.
   void startMatchmaking() {
     debugPrint(
       'TournamentMatchScreen.startMatchmaking invoked ts=${DateTime.now().toIso8601String()} _isSearching=$_isSearching',
@@ -228,7 +225,6 @@ class TournamentMatchScreen extends Component {
         fbUser?.uid ?? 'guest_${DateTime.now().millisecondsSinceEpoch}';
     final tournamentId =
         'weekly_${DateTime.now().year}-W${_currentWeekNumber()}';
-    // Send leave request; UI already restored.
     try {
       await _leaveQueue(userId, tournamentId);
     } catch (e) {
@@ -261,7 +257,6 @@ class TournamentMatchScreen extends Component {
     try {
       final flameGame = findGame();
       final pos = flameGame?.size != null ? flameGame!.size / 2 : Vector2(0, 0);
-      // Remove existing control if present
       try {
         _searchControl?.removeFromParent();
       } catch (_) {}
@@ -294,13 +289,13 @@ class TournamentMatchScreen extends Component {
       );
       _searchControl = playBtn;
       add(playBtn);
-      // Update status text to the neutral state when Play is restored.
+      // Update status text to the normal state when Play is restored.
       statusText?.text = 'Tap Play to find an opponent';
     } catch (_) {}
   }
 }
 
-// --- BUTTON CLASSES ---
+//  BUTTON CLASSES
 class ReturnButton extends SpriteComponent with TapCallbacks {
   final FutureOr<void> Function() onPressed;
   final String imagePath;

@@ -119,9 +119,6 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
         ),
       ]),
     );
-    // Call the handler immediately so UX is responsive; keep the visual
-    // effect running but do not delay action execution which previously
-    // caused perceived slowness.
     onPressed();
   }
 }

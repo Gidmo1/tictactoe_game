@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/score.dart';
 
 class ScoreService {
-  // Save a score. If logged in, send to server; otherwise store locally.
+  // Save a score. If logged in, send to server; otherwise store locally
   Future<void> saveScore(Score score, {bool loggedIn = false}) async {
     if (loggedIn) {
       // Logged-in: send to server

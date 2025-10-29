@@ -5,7 +5,7 @@ import 'firebase_options.dart';
 import 'package:flame/game.dart';
 import 'tictactoe.dart';
 import 'service/link_service.dart';
-import 'settings_screen.dart'; // for SettingsScreen.gameSoundOn
+import 'settings_screen.dart';
 import 'package:flame/flame.dart';
 
 void main() async {

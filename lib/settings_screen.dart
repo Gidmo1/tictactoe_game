@@ -1,5 +1,4 @@
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
@@ -80,9 +79,6 @@ class SettingsScreen extends Component
         toggleBg.sprite = on ? toggleRightBgSprite : toggleLeftBgSprite;
 
         await _saveSoundState();
-
-        // Use the game's centralized music API so only menu/profile screens
-        // play music and we avoid direct FlameAudio calls scattered around.
         try {
           final g = game;
           if (gameSoundOn) {
@@ -90,9 +86,7 @@ class SettingsScreen extends Component
           } else {
             g.stopMenuMusic();
           }
-        } catch (_) {
-          // ignore if cast fails
-        }
+        } catch (_) {}
       },
     );
     add(toggleButton);
@@ -134,7 +128,7 @@ class SettingsScreen extends Component
       ),
     );
 
-    // Load saved state & sync visuals
+    // Load saved state and sync
     await _loadSoundState();
   }
 

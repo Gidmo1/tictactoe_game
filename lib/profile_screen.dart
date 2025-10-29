@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
-// debugPrint available via flutter/material.dart import above
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -71,7 +70,7 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(nameText);
 
-    // League badge shown beside name
+    // Player's current league badge beside name
     try {
       String badgeAsset = 'Bronze I.png';
       if (league.toLowerCase() == 'silver') badgeAsset = 'Silver II.png';
@@ -80,9 +79,6 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
       final badge = SpriteComponent(
         sprite: badgeSprite,
         size: Vector2(40, 40),
-        // Nudge the badge slightly down so it aligns visually with name.
-        // Position it to the LEFT of the player name (same horizontal
-        // offset as the previous right-side placement).
         position: Vector2(game.size.x / 2 - 115, 253),
         anchor: Anchor.center,
       );
@@ -117,7 +113,7 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
         );
         add(noTrophies);
       } else {
-        // Display trophies horizontally
+        // Display trophies
         final startX = game.size.x / 2 - (trophies.length * 48) / 2;
         for (int i = 0; i < trophies.length; i++) {
           final key = trophies[i];
@@ -143,9 +139,6 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(returnButton);
   }
-
-  // Music is controlled centrally by TicTacToeGame.handleRouteChange; no
-  // per-screen lifecycle hooks are needed here.
 
   Future<void> _loadPlayerData() async {
     final prefs = await SharedPreferences.getInstance();

@@ -1,13 +1,12 @@
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
-// package:flame/game.dart import not required; components already provides types used here
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 
 class EndMatchOverlay extends PositionComponent {
-  /// Whether the player won, lost, or drew.
+  // Whether the player won, lost, or drew.
   final bool didWin;
   final bool didDraw;
   final VoidCallback onNext;
@@ -39,7 +38,7 @@ class EndMatchOverlay extends PositionComponent {
         ),
       );
     } else {
-      // fallback translucent rectangle
+      // fallback rectangle
       add(
         RectangleComponent(
           size: size,
@@ -77,7 +76,7 @@ class EndMatchOverlay extends PositionComponent {
       ),
     );
 
-    // Optional small details text
+    // Small message
     add(
       TextComponent(
         text: didDraw
@@ -153,7 +152,6 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    // sound handled by caller if needed, but keep local as well for quick feedback
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
 
     add(
@@ -169,8 +167,6 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
         ),
       ]),
     );
-
-    // slight delay so effect is visible
     Future.delayed(const Duration(milliseconds: 110), () => onPressed());
   }
 }

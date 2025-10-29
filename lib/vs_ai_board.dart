@@ -30,7 +30,9 @@ class TicTacToeVsAI extends Component {
   late TextComponent scoreText;
   late SpriteComponent humanIcon;
   late SpriteComponent aiIcon;
+  late TextComponent levelText;
 
+  int currentLevel = 1;
   bool confettiRunning = false;
   final Random random = Random();
   final List<Component> confettiPieces = [];
@@ -50,7 +52,6 @@ class TicTacToeVsAI extends Component {
   @override
   Future<void> onLoad() async {
     ai = TicTacToeAI();
-
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
 
     try {
@@ -61,6 +62,7 @@ class TicTacToeVsAI extends Component {
         ..position = Vector2.zero();
       add(background);
 
+      // Player icons
       final iconSize = 40.0;
       humanIcon = SpriteComponent()
         ..sprite = await Sprite.load('X.png')
@@ -74,8 +76,31 @@ class TicTacToeVsAI extends Component {
         ..position = Vector2(canvasSize.x - 100, 50);
       add(aiIcon);
 
+      // Load and display level
+      final prefs = await SharedPreferences.getInstance();
+      currentLevel = prefs.getInt('ai_level') ?? 1;
+      if (currentLevel < 1) currentLevel = 1;
+
+      levelText = TextComponent(
+        text: 'Level $currentLevel',
+        position: Vector2(canvasSize.x / 2, 50),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: const TextStyle(
+            fontSize: 28,
+            color: Colors.yellow,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(blurRadius: 3, color: Colors.black, offset: Offset(0, 2)),
+            ],
+          ),
+        ),
+      );
+      add(levelText);
+
+      // Empty score text (no scoring system)
       scoreText = TextComponent(
-        text: "", // no scores
+        text: "",
         position: Vector2(canvasSize.x / 2, 60),
         anchor: Anchor.center,
         textRenderer: TextPaint(
@@ -94,7 +119,7 @@ class TicTacToeVsAI extends Component {
       add(
         TextComponent(
           text: 'Error loading VS Computer screen.',
-          position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
+          position: Vector2(180, 320),
           anchor: Anchor.center,
           textRenderer: TextPaint(
             style: const TextStyle(fontSize: 24, color: Colors.redAccent),
@@ -109,44 +134,41 @@ class TicTacToeVsAI extends Component {
         imagePath: 'return.png',
         position: Vector2(40, 180),
         size: Vector2(60, 60),
-        onPressed: () {
+        onPressed: () async {
           final flameGame = findGame();
-          if (flameGame != null) {
-            final dim = RectangleComponent(
-              size: flameGame.size,
-              paint: Paint()..color = Colors.black.withOpacity(0.6),
-              priority: 1000000000000,
-            );
-            flameGame.add(dim);
+          if (flameGame == null) return;
 
-            late ConfirmationOverlay overlay;
-            overlay = ConfirmationOverlay(
-              onYes: () async {
-                overlay.removeFromParent();
-                dim.removeFromParent();
+          final dim = RectangleComponent(
+            size: flameGame.size,
+            paint: Paint()..color = Colors.black.withOpacity(0.6),
+            priority: 1000000000000,
+          );
+          flameGame.add(dim);
 
-                if (!gameOver) {
-                  await saveScore("loss");
-                }
+          late ConfirmationOverlay overlay;
+          overlay = ConfirmationOverlay(
+            onYes: () async {
+              overlay.removeFromParent();
+              dim.removeFromParent();
 
-                restartBoard();
+              if (!gameOver) await saveScore("loss");
+              restartBoard();
 
-                final router = (flameGame as dynamic).router;
-                router?.pushNamed('menu');
-              },
-              onNo: () {
-                overlay.removeFromParent();
-                dim.removeFromParent();
-              },
-            );
-            overlay.priority = 10000000000000;
-            flameGame.add(overlay);
-          }
+              final router = (flameGame as dynamic).router;
+              router?.pushNamed('menu');
+            },
+            onNo: () {
+              overlay.removeFromParent();
+              dim.removeFromParent();
+            },
+          );
+          overlay.priority = 10000000000000;
+          flameGame.add(overlay);
         },
       ),
     );
 
-    // Cells
+    // Board cells
     for (int row = 0; row < 3; row++) {
       for (int col = 0; col < 3; col++) {
         add(
@@ -169,11 +191,8 @@ class TicTacToeVsAI extends Component {
     if (board[row][col] != '') return;
 
     makeMove(row, col, humanPlayer);
-
     if (!gameOver) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!gameOver) aiMove();
-      });
+      Future.delayed(const Duration(milliseconds: 500), aiMove);
     }
   }
 
@@ -185,9 +204,7 @@ class TicTacToeVsAI extends Component {
     );
     cell.mark(player);
 
-    if (checkForWinner(player)) {
-      endRound();
-    } else if (checkForDraw()) {
+    if (checkForWinner(player) || checkForDraw()) {
       endRound();
     } else {
       currentPlayer = (player == humanPlayer) ? aiPlayer : humanPlayer;
@@ -196,16 +213,12 @@ class TicTacToeVsAI extends Component {
 
   void aiMove() {
     if (gameOver) return;
-
     final move = ai.getMoveForLevel(board, 15, aiPlayer, humanPlayer);
-    if (move[0] != -1) {
-      makeMove(move[0], move[1], aiPlayer);
-    }
+    if (move[0] != -1) makeMove(move[0], move[1], aiPlayer);
   }
 
   void endRound() {
     gameOver = true;
-
     Future.delayed(const Duration(seconds: 1), () async {
       String result;
       if (checkForWinner(humanPlayer)) {
@@ -231,7 +244,13 @@ class TicTacToeVsAI extends Component {
         final overlay = EndMatchOverlay(
           didWin: result == "win",
           didDraw: result == "draw",
-          onNext: () {
+          onNext: () async {
+            // Always increase level
+            currentLevel++;
+            levelText.text = 'Level $currentLevel';
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt('ai_level', currentLevel);
+
             dim.removeFromParent();
             restartBoard();
           },
@@ -264,8 +283,6 @@ class TicTacToeVsAI extends Component {
       c.removeFromParent();
     }
     confettiPieces.clear();
-
-    scoreText.text = "";
   }
 
   bool checkForWinner(String player) {
@@ -312,29 +329,24 @@ class TicTacToeVsAI extends Component {
       ],
     ];
     return combos.any(
-      (combo) =>
-          board[combo[0][0]][combo[0][1]] == player &&
-          board[combo[1][0]][combo[1][1]] == player &&
-          board[combo[2][0]][combo[2][1]] == player,
+      (c) =>
+          board[c[0][0]][c[0][1]] == player &&
+          board[c[1][0]][c[1][1]] == player &&
+          board[c[2][0]][c[2][1]] == player,
     );
   }
 
-  bool checkForDraw() {
-    return board.every((row) => row.every((cell) => cell != ''));
-  }
+  bool checkForDraw() =>
+      board.every((row) => row.every((cell) => cell.isNotEmpty));
 
   void _startConfetti() {
     if (confettiRunning) return;
     confettiRunning = true;
-
     final size = findGame()?.size ?? Vector2(360, 640);
 
-    void spawnConfettiPiece() {
+    void spawnPiece() {
       if (!confettiRunning) return;
-
-      final double confettiSize = 4 + random.nextDouble() * 6;
-      final shapeType = random.nextInt(3);
-      late PositionComponent confetti;
+      final s = 4 + random.nextDouble() * 6;
       final paint = Paint()
         ..color = Color.fromARGB(
           255,
@@ -342,64 +354,58 @@ class TicTacToeVsAI extends Component {
           random.nextInt(256),
           random.nextInt(256),
         );
+      final shape = random.nextInt(3);
+      PositionComponent piece;
 
-      switch (shapeType) {
+      switch (shape) {
         case 0:
-          confetti = RectangleComponent(
-            size: Vector2(confettiSize, confettiSize * 1.5),
+          piece = RectangleComponent(
+            size: Vector2(s, s * 1.5),
             paint: paint,
             position: Vector2(random.nextDouble() * size.x, -10),
             anchor: Anchor.center,
           );
           break;
         case 1:
-          confetti = CircleComponent(
-            radius: confettiSize / 2,
+          piece = CircleComponent(
+            radius: s / 2,
             paint: paint,
             position: Vector2(random.nextDouble() * size.x, -10),
             anchor: Anchor.center,
           );
           break;
         default:
-          confetti = PolygonComponent(
-            [
-              Vector2(0, 0),
-              Vector2(confettiSize, 0),
-              Vector2(confettiSize / 2, confettiSize),
-            ],
+          piece = PolygonComponent(
+            [Vector2(0, 0), Vector2(s, 0), Vector2(s / 2, s)],
             paint: paint,
             position: Vector2(random.nextDouble() * size.x, -10),
             anchor: Anchor.center,
           );
       }
 
-      confettiPieces.add(confetti);
-      add(confetti);
-
-      final fallDuration = 1.5 + random.nextDouble() * 1.5;
-      confetti.add(
+      confettiPieces.add(piece);
+      add(piece);
+      final fall = 1.5 + random.nextDouble() * 1.5;
+      piece.add(
         MoveEffect.to(
-          Vector2(confetti.x, size.y + 50),
-          EffectController(duration: fallDuration, curve: Curves.linear),
+          Vector2(piece.x, size.y + 50),
+          EffectController(duration: fall, curve: Curves.linear),
           onComplete: () {
-            confetti.removeFromParent();
-            confettiPieces.remove(confetti);
+            piece.removeFromParent();
+            confettiPieces.remove(piece);
           },
         ),
       );
-
-      confetti.add(
+      piece.add(
         RotateEffect.by(
           random.nextDouble() * pi * 4,
-          EffectController(duration: fallDuration, curve: Curves.linear),
+          EffectController(duration: fall),
         ),
       );
-
-      Future.delayed(const Duration(milliseconds: 15), spawnConfettiPiece);
+      Future.delayed(const Duration(milliseconds: 15), spawnPiece);
     }
 
-    spawnConfettiPiece();
-
+    spawnPiece();
     Future.delayed(const Duration(milliseconds: 2500), () {
       confettiRunning = false;
     });
@@ -408,30 +414,26 @@ class TicTacToeVsAI extends Component {
   Future<void> saveScore(String result) async {
     if (loggedInUser.id.isEmpty) {
       final prefs = await SharedPreferences.getInstance();
-      final key = 'guest_score';
-      await prefs.setString(key, json.encode({'result': result}));
+      await prefs.setString('guest_score', json.encode({'result': result}));
       return;
     }
-
-    final dataToSend = {
+    final data = {
       'playerId': loggedInUser.id,
       'result': result,
       'mode': 'vs_ai',
       'timestamp': DateTime.now().toIso8601String(),
     };
-
     try {
       final callable = FirebaseFunctions.instanceFor(
         region: 'us-central1',
       ).httpsCallable('updateScore');
-      await callable.call(dataToSend);
+      await callable.call(data);
     } catch (e) {
       print("Error saving score to Firebase: $e");
     }
   }
 }
 
-// TicTacToeCell
 class TicTacToeCell extends PositionComponent with TapCallbacks {
   TicTacToeCell({
     required this.row,
@@ -446,15 +448,10 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    try {
-      if (parent is TicTacToeVsAI) {
-        final vs = parent as TicTacToeVsAI;
-        if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
-        event.handled = true;
-        vs.handleTap(row, col);
-      }
-    } catch (e, st) {
-      print('Error handling TicTacToeCell tap: $e\n$st');
+    if (parent is TicTacToeVsAI) {
+      final vs = parent as TicTacToeVsAI;
+      if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
+      vs.handleTap(row, col);
     }
   }
 
@@ -473,7 +470,6 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 class _PressdownIconButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String imagePath;
-
   _PressdownIconButton({
     required this.imagePath,
     required Vector2 position,
@@ -482,15 +478,13 @@ class _PressdownIconButton extends SpriteComponent with TapCallbacks {
   }) : super(size: size, position: position, anchor: Anchor.center);
 
   @override
-  Future<void> onLoad() async {
-    sprite = await Sprite.load(imagePath);
-  }
+  Future<void> onLoad() async => sprite = await Sprite.load(imagePath);
 
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     _bounceEffect();
-    Future.delayed(const Duration(milliseconds: 120), () => onPressed());
+    Future.delayed(const Duration(milliseconds: 120), onPressed);
   }
 
   void _bounceEffect() {

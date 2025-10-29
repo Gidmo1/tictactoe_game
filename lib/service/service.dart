@@ -15,7 +15,7 @@ class UserService {
       ).httpsCallable('saveUserProfile');
       await callable.call({'userId': user.id, 'profile': user.toJson()});
     } catch (e) {
-      // Do not write to Firestore from the client; surface error so caller can retry.
+      // Do not write to Firestore from the client.
       rethrow;
     }
   }

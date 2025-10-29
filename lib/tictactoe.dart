@@ -42,8 +42,6 @@ class ObservingRouter extends RouterComponent {
 
   @override
   Future<void> pop() async {
-    // After popping, we don't have the new route name here; callers should
-    // rely on pushNamed for notifications. Keep pop default behavior.
     return super.pop();
   }
 }
@@ -56,22 +54,14 @@ class TicTacToeGame extends FlameGame
   String lastMessage = '';
   String loggedInUser = '';
   String? myPlayerSymbol;
-  // Publicly visible current route name (kept in sync by the router)
   String currentRoute = 'menu';
-  // previously used to track last route; not needed after music handler simplification
 
-  // music flag to prevent duplicate starts/stops
+  // music flag to prevent duplicate starts or stops
   bool _isMenuMusicPlaying = false;
-  // When a player comes from the Competition screen after already joining the
-  // tournament, we set this flag so `TournamentMatchScreen` can show the
-  // joined-only view (message + return) instead of offering the Play button.
   bool pendingTournamentJoinView = false;
-  // When the Competition screen's Play button is pressed we may want the
-  // Tournament screen to begin matchmaking immediately. This flag signals
-  // that the Tournament screen should auto-start the search on load.
   bool pendingTournamentAutoSearch = false;
 
-  // PUBLIC music API (call these from components/screens)
+  // it's gonna call these from components
   Future<void> playMenuMusic() async => _playMenuMusic();
   Future<void> stopMenuMusic() async => _stopMenuMusic();
 
@@ -80,7 +70,6 @@ class TicTacToeGame extends FlameGame
     if (!SettingsScreen.gameSoundOn) return;
     if (_isMenuMusicPlaying) return;
     try {
-      // stop any stray BGM first to avoid overlap
       await FlameAudio.bgm.stop();
     } catch (_) {}
     try {
@@ -105,7 +94,6 @@ class TicTacToeGame extends FlameGame
     _isMenuMusicPlaying = false;
   }
 
-  // Public API used by the ObservingRouter to notify route changes.
   void handleRouteChange(String routeName) {
     currentRoute = routeName;
     _handleMusicForRoute(routeName);
@@ -116,7 +104,7 @@ class TicTacToeGame extends FlameGame
     // trigger matchmaking on any TournamentMatchScreen instance found.
     if (routeName == 'tournament' && pendingTournamentAutoSearch) {
       try {
-        // Clear the request immediately so it doesn't fire repeatedly.
+        // Clear the request immediately so it doesn't cause error repeatedly.
         pendingTournamentAutoSearch = false;
         // Find TournamentMatchScreen components and call their start method.
         final comps = children.whereType<Component>().where(
@@ -157,7 +145,7 @@ class TicTacToeGame extends FlameGame
     router.pushNamed('invite');
   }
 
-  /// Join a match directly (e.g. link or invite)
+  // Join a match directly
   void joinMatch(String matchId) {
     lastMessage = 'Joining match $matchId...';
     pendingMatchId = matchId;
@@ -190,7 +178,7 @@ class TicTacToeGame extends FlameGame
     SettingsScreen.buttonSoundOn = prefs.getBool('buttonSoundOn') ?? true;
     SettingsScreen.gameSoundOn = prefs.getBool('gameSoundOn') ?? true;
 
-    // Router setup: ObservingRouter to react to route pushes centrally.
+    // Router setup
     router = ObservingRouter(
       initialRoute: 'menu',
       routes: {
@@ -230,13 +218,11 @@ class TicTacToeGame extends FlameGame
 
     add(router);
 
-    // preload common assets that the Competition screen and matchmaking UI use
-    // (keeps the leaderboard/background from showing a black screen briefly)
+    // preload common assets that the Competition screen and matchmaking UI
     try {
       await images.load('leaderboard_background.png');
       await images.load('loading.png');
       await images.load('background.png');
-      // optional UX assets used by Competition and Tournament screens
       await images.load('retry.png');
       await images.load('cancel.png');
       // Record a prefs flag indicating preload succeeded (informational).
@@ -245,9 +231,6 @@ class TicTacToeGame extends FlameGame
         await prefs.setBool('assets_preloaded_v1', true);
       } catch (_) {}
     } catch (e) {
-      // Not fatal — if assets are missing we'll fall back to text controls.
-      // Keep this silent in production but log during development.
-      // ignore: avoid_print
       print('Preload assets failed: $e');
     }
 

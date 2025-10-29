@@ -62,6 +62,19 @@ class TicTacToeBoard extends Component {
       ..position = Vector2.zero();
     add(background);
 
+    // Player profile image
+    try {
+      final profile = SpriteComponent()
+        ..sprite = await Sprite.load('profile.png')
+        ..size = Vector2(56, 56)
+        ..position = Vector2(20, 40)
+        ..anchor = Anchor.topLeft;
+      add(profile);
+    } catch (e) {
+      // If asset missing or fails to load, ignore silently to avoid spoiling my game
+      print('Failed to load profile.png: $e');
+    }
+
     // Message text
     messageText = TextComponent(
       text: "Player $currentPlayer's turn",

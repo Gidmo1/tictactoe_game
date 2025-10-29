@@ -137,7 +137,7 @@ class TicTacToeAI {
 
   double _getMistakeChance(int level) {
     // Higher level means fewer mistakes
-    if (level <= 1) return 0.9; // 90% dumb
+    if (level <= 1) return 0.9; // will be simple
     if (level <= 10) return 0.6;
     if (level <= 20) return 0.4;
     if (level <= 30) return 0.2;

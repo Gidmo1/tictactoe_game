@@ -2,7 +2,7 @@ import 'user.dart';
 
 class Match {
   final String id; // Firestore document ID
-  final List<String> board; // 9 cells: '', 'X', 'O'
+  final List<String> board; // 9 cells:
   final User playerX; // Player using X
   final User playerO; // Player using O
   String currentTurnUserId; // Who’s turn it is

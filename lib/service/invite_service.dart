@@ -14,30 +14,30 @@ class InviteService {
   static const String _host = 'join';
   static StreamSubscription<Uri>? _sub;
 
-  /// Generates a random match ID
+  // Generates a random match ID
   String generateMatchId() {
     final rand = Random();
     return 'match_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(9999)}';
   }
 
-  /// Creates a deep link for your app
+  // Creates a deep link for my game
   String createInviteLink(String matchId) {
     return '$_scheme://$_host?matchId=$matchId';
   }
 
-  /// Fallback web link (used for WhatsApp or if app isn't installed)
+  // Fallback web link (used for WhatsApp or if app isn't installed)
   String createWebFallbackLink(String matchId) {
     return 'https://mytictactoe.example.app/join?matchId=$matchId';
   }
 
-  // Share link via WhatsApp (or copy to clipboard if not available)
+  // Share link via WhatsApp
   Future<void> shareViaWhatsApp(BuildContext context, String matchId) async {
     // Use web fallback for WhatsApp sharing
     final webFallback = createWebFallbackLink(matchId);
 
-    // WhatsApp only highlights clickable HTTP/HTTPS URLs, not custom schemes
+    // WhatsApp only highlights clickable HTTP/HTTPS URLs
     final encodedMessage = Uri.encodeComponent(
-      'Join my TicTacToe game! Tap the link to join: $webFallback',
+      'Join my TicTacToe game, who do you think will win? Tap the link to join: $webFallback',
     );
 
     final whatsappUrl = Uri.parse('https://wa.me/?text=$encodedMessage');

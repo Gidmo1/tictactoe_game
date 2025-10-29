@@ -260,7 +260,7 @@ class _ScrollableLeaderboardContainer extends PositionComponent
     removeAll(children);
     cardComponents.clear();
 
-    // Show placeholders when the leaderboard is empty.
+    // Show dummy people when the leaderboard is empty.
     List<Map<String, dynamic>> renderEntries = entries;
     if (entries.isEmpty) {
       renderEntries = List.generate(8, (i) {
@@ -351,7 +351,6 @@ class _ScrollableLeaderboardContainer extends PositionComponent
 }
 
 // Competition screen
-
 class CompetitionScreen extends Component with HasGameReference {
   List<Map<String, dynamic>> leaderboardEntries = [];
   late SpriteComponent loadingIndicator;
@@ -478,8 +477,7 @@ class CompetitionScreen extends Component with HasGameReference {
     if (!online) {
       remove(loadingIndicator);
 
-      // Try to show a retry image button if available. This gives users a
-      // clear visual affordance to retry when connectivity is restored.
+      // Try to show a retry image button if network available
       try {
         final retrySprite = await game.loadSprite('retry.png');
         late final _PressdownButton retryButton;
@@ -613,7 +611,6 @@ class CompetitionScreen extends Component with HasGameReference {
     final playSprite = await game.loadSprite('play.png');
     final buttonWidth = 220.0;
     final buttonHeight = 56.0;
-    // move the button a little lower (smaller top margin)
     final bottomStartY = game.size.y - buttonHeight - 10;
 
     final fb.User? fbUser = fb.FirebaseAuth.instance.currentUser;
@@ -746,11 +743,10 @@ class CompetitionScreen extends Component with HasGameReference {
               priority: 1001,
             );
 
-            // Claim button (use claim.png). If the sprite is missing, use a text button
+            // Claim button. If the sprite is missing, use a text button
             _PressdownButton? claimButtonRef;
             try {
               final claimSprite = await game.loadSprite('claim.png');
-              // place claim button at the bottom-middle of the overlay background
               final claimY = overlayBg.position.y + overlayBg.size.y - 40;
               final claimButtonLocal = _PressdownButton(
                 sprite: claimSprite,
@@ -903,7 +899,7 @@ class CompetitionScreen extends Component with HasGameReference {
     try {
       final HttpsCallable callable = functions.httpsCallable(
         'getLeaderboard',
-      ); // CF function
+      ); // Cloud function
       final result = await callable.call({'limit': limit});
       final List<dynamic> data = result.data ?? [];
       return data

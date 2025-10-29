@@ -18,7 +18,7 @@ class CompetitionService {
        _functions =
            functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
-  // Returns a week id like 2025-W42 for the current date/time.
+  // Returns a week id like 2025-W42 for the current date or time. I used this to identify competitions
   String getCurrentWeekId([DateTime? forDate]) {
     final now = forDate ?? DateTime.now().toUtc();
     final year = now.year;
@@ -35,7 +35,7 @@ class CompetitionService {
   CollectionReference<Map<String, dynamic>> _entriesRef(String weekId) =>
       _db.collection('competitions').doc(weekId).collection('entries');
 
-  // Wait for a signed-in user and refresh their ID token.
+  // Wait for a signed-in user and refresh their ID token
   Future<fb.User?> waitForSignIn({
     Duration timeout = const Duration(seconds: 5),
   }) async {
@@ -64,7 +64,7 @@ class CompetitionService {
       debugPrint('Token refresh failed while waiting for sign-in: $e');
     }
 
-    // Log project and functions region for debugging in dev builds.
+    // Log project and functions region for debugging in dev builds
     try {
       final proj = Firebase.app().options.projectId;
       debugPrint('waitForSignIn: Firebase projectId=$proj');
@@ -75,34 +75,66 @@ class CompetitionService {
     return user;
   }
 
-  /// User joins a tournament (creates entry if not exists)
+  // User joins a tournament (creates entry if not exists)
   Future<void> joinTournament(String weekId, CompetitionEntry entry) async {
-    // Ensure the user is signed in and the ID token is fresh/propagated
+    // Ensure the user is signed in and the ID token is fresh
     final fb.User? user = await waitForSignIn();
     if (user == null) {
       throw StateError('User not signed in');
     }
 
-    // Recreate Functions client so it uses a fresh ID token.
+    // Force-refresh the ID token
+    final idTokenBefore = await user.getIdToken(true);
+    debugPrint(
+      'joinTournament: uid=${user.uid} idTokenLen=${idTokenBefore?.length ?? 0}',
+    );
+    // DEV: decode JWT payload to inspect claims (aud/iss/exp/sub) for debugging.
+    try {
+      final token = idTokenBefore ?? '';
+      final parts = token.split('.');
+      if (parts.length == 3) {
+        String _normalize(String s) {
+          var out = s.replaceAll('-', '+').replaceAll('_', '/');
+          while (out.length % 4 != 0) out += '=';
+          return out;
+        }
+
+        final payload = parts[1];
+        final decoded = utf8.decode(base64Url.decode(_normalize(payload)));
+        debugPrint('joinTournament: token claims=$decoded');
+      }
+    } catch (e) {
+      debugPrint('joinTournament: token decode failed: $e');
+    }
+
+    // Recreate Functions client so it uses a fresh ID token. Add a small
+    // delay after refresh to allow native SDKs to propagate the new token
+    await Future.delayed(const Duration(milliseconds: 250));
     final functionsClient = FirebaseFunctions.instanceFor(
       region: 'us-central1',
     );
     final callable = functionsClient.httpsCallable('joinTournament');
+
     try {
       await callable.call({'weekId': weekId, 'userName': entry.userName});
       debugPrint('joinTournament requested via Cloud Function.');
     } on FirebaseFunctionsException catch (fe) {
       if (fe.code == 'unauthenticated') {
-        // Try a single refresh+retry
+        // Try a single refresh and retry
         try {
-          await user.getIdToken(true);
+          final idTokenRefreshed = await user.getIdToken(true);
+          debugPrint(
+            'joinTournament: refreshed idTokenLen=${idTokenRefreshed?.length ?? 0}',
+          );
           try {
             await fb.FirebaseAuth.instance
                 .idTokenChanges()
                 .firstWhere((u) => u?.uid == user.uid)
                 .timeout(const Duration(seconds: 2));
           } catch (_) {}
-          // Recreate the functions client for the retry as well.
+          await Future.delayed(const Duration(milliseconds: 300));
+
+          // Recreate the functions client for the retry also
           final retryClient = FirebaseFunctions.instanceFor(
             region: 'us-central1',
           );
@@ -116,9 +148,10 @@ class CompetitionService {
           debugPrint('joinTournament still unauthenticated after retry: $e');
 
           // If unauthenticated, do NOT write to Firestore from the client
-          // (prevents cheating). Try a token-based REST callable fallback.
+          // (prevents cheating). Try a token-based REST callable fallback
           try {
-            final idToken = await user.getIdToken(true);
+            final String? idTokenNullable = await user.getIdToken(true);
+            String idToken = idTokenNullable ?? '';
             final projectId = Firebase.app().options.projectId;
             final url = Uri.https(
               'us-central1-$projectId.cloudfunctions.net',
@@ -141,8 +174,50 @@ class CompetitionService {
               'joinTournament REST fallback status=${resp.statusCode} body=$body',
             );
             if (resp.statusCode == 200) {
-              // Consider success; return to caller.
+              // After success, return to caller
               return;
+            }
+
+            // If REST fallback returned 401, try to reload the user and retry
+            // once. This helps when the native SDK hasn't propogated a fresh
+            // token yet.
+            if (resp.statusCode == 401) {
+              debugPrint(
+                'joinTournament REST returned 401; attempting user.reload() and retry',
+              );
+              try {
+                await user.reload();
+                final String? idTokenNullable2 = await user.getIdToken(true);
+                idToken = idTokenNullable2 ?? '';
+                final retryReq = await client.postUrl(url);
+                retryReq.headers.set(
+                  HttpHeaders.contentTypeHeader,
+                  'application/json',
+                );
+                retryReq.headers.set(
+                  HttpHeaders.authorizationHeader,
+                  'Bearer $idToken',
+                );
+                retryReq.add(
+                  utf8.encode(
+                    jsonEncode({
+                      'data': {'weekId': weekId},
+                    }),
+                  ),
+                );
+                final retryResp = await retryReq.close();
+                final retryBody = await retryResp
+                    .transform(utf8.decoder)
+                    .join();
+                debugPrint(
+                  'joinTournament REST retry status=${retryResp.statusCode} body=$retryBody',
+                );
+                if (retryResp.statusCode == 200) return;
+              } catch (reloadErr) {
+                debugPrint(
+                  'joinTournament REST reload+retry failed: $reloadErr',
+                );
+              }
             }
           } catch (restErr) {
             debugPrint('REST fallback failed: $restErr');
@@ -216,7 +291,7 @@ class CompetitionService {
     }
   }
 
-  /// Adds XP via Cloud Function (no direct Firestore write)
+  // Adds XP via Cloud Function (no direct Firestore write)
   Future<void> addXp(
     String weekId,
     String userId,
@@ -238,9 +313,9 @@ class CompetitionService {
     }
   }
 
-  /// Assign league tiers (gold/silver/bronze) based on XP percentiles
+  // Assign league tiers (gold/silver/bronze) based on XP percents
   Future<void> finalizeLeagues(String weekId) async {
-    // Finalize leagues server-side via a Cloud Function.
+    // Finalize leagues server-side via a Cloud Function
     try {
       final callable = _functions.httpsCallable('finalizeLeagues');
       await callable.call({'weekId': weekId});
@@ -251,14 +326,13 @@ class CompetitionService {
     }
   }
 
-  /// Matchmaking system for tournament games
+  // Matchmaking system for tournament games
   Future<Map<String, dynamic>> matchmakeForTournament({
     required String weekId,
     required String userId,
     required String userName,
   }) async {
-    // Matchmaking is handled server-side to avoid client-side races and
-    // enforce rules.
+    // Matchmaking is handled server-side to avoid client-side cheating
     try {
       // Log a short idToken fingerprint to help debug authentication issues.
       try {
@@ -293,7 +367,7 @@ class CompetitionService {
     }
   }
 
-  /// (Optional) Sends a WhatsApp notification when weekly results are finalized
+  // Sends a WhatsApp notification when weekly results are finalized
   Future<void> sendWeeklyWhatsAppUpdate(String weekId) async {
     try {
       final entries = await getAllEntries(weekId);
@@ -312,8 +386,6 @@ class CompetitionService {
         )
         ..writeln('')
         ..writeln('Keep up the good work for next week\'s leaderboard.');
-
-      // NOTE: Replace this with your server or WhatsApp Cloud API call.
       debugPrint('WhatsApp update would be sent:\n$message');
     } catch (e) {
       debugPrint('Error sending WhatsApp update: $e');
