@@ -110,17 +110,22 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
       overlayBuilderMap: {
         // Success login overlay
         'confirmation': (context, game) {
-          final msg = (game as TicTacToeGame?)?.lastMessage ?? '';
-          final username = (game as TicTacToeGame?)?.loggedInUser ?? '';
+          final g = game as TicTacToeGame?;
+          final msg = g?.lastMessage ?? '';
+          final username = g?.loggedInUser ?? '';
           if (msg.isEmpty || username.isEmpty) return const SizedBox.shrink();
           return Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
               padding: const EdgeInsets.only(bottom: 32),
               child: Container(
-                constraints: const BoxConstraints(maxWidth: 340),
+                constraints: const BoxConstraints(maxWidth: 420),
+                height: 120,
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
+                  image: const DecorationImage(
+                    image: AssetImage('confirmation_overlay.png'),
+                    fit: BoxFit.cover,
+                  ),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 padding: const EdgeInsets.symmetric(

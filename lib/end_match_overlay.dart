@@ -3,7 +3,11 @@ import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'components/auth_gate_component.dart';
 
 class EndMatchOverlay extends PositionComponent {
   // Whether the player won, lost, or drew.
@@ -132,6 +136,30 @@ class EndMatchOverlay extends PositionComponent {
         ),
       );
     }
+
+    // Show the Flame-native AuthGateComponent for first-time guest players.
+    try {
+      final authUser = fb.FirebaseAuth.instance.currentUser;
+      final prefs = await SharedPreferences.getInstance();
+      final seenSignInPrompt = prefs.getBool('seen_signin_prompt') ?? false;
+
+      if (authUser == null && !seenSignInPrompt) {
+        await prefs.setBool('seen_signin_prompt', true);
+        final flameGame = findGame();
+        if (flameGame != null) {
+          final gate = AuthGateComponent(
+            onSignedIn: () async {
+              // Post sign-in handled inside the component (score sync);
+            },
+            nonDismissible: false,
+          );
+          gate.priority = 10060;
+          flameGame.add(gate);
+        }
+      }
+    } catch (e) {
+      debugPrint('Sign-in prompt logic failed: $e');
+    }
   }
 }
 
@@ -146,11 +174,10 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
   }) : super(
          sprite: sprite,
          position: position,
-         size: size ?? Vector2(120, 50),
+         size: size ?? Vector2(64, 64),
          anchor: Anchor.center,
        );
 
-  @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
 
@@ -170,3 +197,5 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
     Future.delayed(const Duration(milliseconds: 110), () => onPressed());
   }
 }
+
+// _SmallOverlayButton removed — replaced by AuthGateComponent usage for sign-in prompts.

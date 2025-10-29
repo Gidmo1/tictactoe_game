@@ -13,7 +13,6 @@ import 'firebase.dart';
 import 'board.dart';
 import 'competition_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'auth_gate.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'models/user.dart' as app_user;
@@ -370,24 +369,9 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
         sprite: competitionSprite,
         position: game.size / 2 + Vector2(0, 140),
         onPressed: () async {
-          final user = FirebaseAuth.instance.currentUser;
-          if (user != null) {
-            game.router.pushNamed('competition');
-          } else {
-            showDialog(
-              context: game.buildContext!,
-              builder: (context) => SizedBox(
-                width: 400,
-                height: 400,
-                child: AuthGate(
-                  onLoginSuccess: () {
-                    game.router.pushNamed('competition');
-                  },
-                ),
-              ),
-              barrierDismissible: false,
-            );
-          }
+          // Allow guests to enter the Competition screen without forcing sign-in.
+          // Guest join/sign-in flow is handled inside the CompetitionScreen.
+          game.router.pushNamed('competition');
         },
       ),
     );

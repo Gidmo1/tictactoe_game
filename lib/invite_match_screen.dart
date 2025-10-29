@@ -6,6 +6,8 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'components/auth_gate_component.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
@@ -139,6 +141,30 @@ class TicTacToeInviteScreen extends Component {
                 ? "Draw!"
                 : (data['winnerUID'] == myUID ? "You win!" : "You lose!");
             _startConfetti();
+
+            // Track completed online matches and show an auth gate every 3 matches.
+            Future.microtask(() async {
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                int cnt = prefs.getInt('online_matches_completed') ?? 0;
+                cnt++;
+                await prefs.setInt('online_matches_completed', cnt);
+                if (cnt % 3 == 0) {
+                  final flameGame = findGame();
+                  if (flameGame != null) {
+                    final gate = AuthGateComponent(
+                      onSignedIn: () async {
+                        // Optionally handle post-sign-in tasks here.
+                      },
+                    );
+                    gate.priority = 10060;
+                    flameGame.add(gate);
+                  }
+                }
+              } catch (e) {
+                debugPrint('Failed to update online match counter: $e');
+              }
+            });
 
             // Server-side trigger will handle awarding XP and marking scores.
             // The client should not write score documents.

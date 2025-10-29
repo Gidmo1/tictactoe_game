@@ -13,12 +13,10 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   bool _loading = false;
-  String? _signedInName;
 
   Future<void> _signInWithFacebook() async {
     setState(() {
       _loading = true;
-      _signedInName = null;
     });
 
     try {
@@ -29,16 +27,9 @@ class _AuthGateState extends State<AuthGate> {
       if (result.status == LoginStatus.success && result.accessToken != null) {
         final accessToken = result.accessToken!.token;
         final facebookCredential = FacebookAuthProvider.credential(accessToken);
-        final userCred = await FirebaseAuth.instance.signInWithCredential(
-          facebookCredential,
-        );
+        await FirebaseAuth.instance.signInWithCredential(facebookCredential);
 
-        final displayName =
-            userCred.user?.displayName ?? userCred.user?.email ?? 'Unknown';
-
-        setState(() {
-          _signedInName = displayName;
-        });
+        // show success then close
 
         // Give UI a second to show success
         await Future.delayed(const Duration(seconds: 1));
@@ -65,127 +56,108 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  Future<void> _signInWithTikTok() async {
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      // Placeholder: integrate TikTok OAuth here. For now just simulate a
+      // successful sign-in flow when testing.
+      await Future.delayed(const Duration(seconds: 1));
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onLoginSuccess?.call();
+      }
+    } catch (e) {
+      debugPrint('TikTok login failed: $e');
+    } finally {
+      setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // Fullscreen background
-          SizedBox.expand(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color.fromARGB(255, 21, 59, 23),
-                    Color.fromARGB(255, 21, 59, 23),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-            ),
-          ),
-
-          // Center Facebook login button
-          Center(
-            child: _loading
-                ? const CircularProgressIndicator(color: Colors.white)
-                : GestureDetector(
-                    onTap: _signInWithFacebook,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 16,
-                        horizontal: 24,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color.fromARGB(255, 8, 77, 203),
-                            Color.fromARGB(255, 8, 77, 203),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color.fromARGB(
-                              255,
-                              8,
-                              77,
-                              203,
-                            ).withOpacity(0.7),
-                            blurRadius: 16,
-                            spreadRadius: 2,
-                            offset: const Offset(0, 0),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          FaIcon(
-                            FontAwesomeIcons.facebook,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                          SizedBox(width: 16),
-                          Text(
-                            'Continue with Facebook',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                              shadows: [
-                                Shadow(
-                                  color: Color.fromARGB(255, 8, 77, 203),
-                                  blurRadius: 8,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+      backgroundColor: Colors.transparent,
+      body: Center(
+        child: _loading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : Container(
+                width: 420,
+                height: 420,
+                decoration: BoxDecoration(
+                  image: const DecorationImage(
+                    image: AssetImage('confirmation_overlay.png'),
+                    fit: BoxFit.cover,
                   ),
-          ),
-
-          // Signed-in message
-          if (_signedInName != null)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 32),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.check_circle,
-                      color: Colors.green,
-                      size: 28,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Successfully signed in as $_signedInName',
-                      style: const TextStyle(
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Sign in so you won\'t lose your scores',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
                         color: Colors.white,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        fontSize: 18,
                         shadows: [
                           Shadow(
+                            blurRadius: 3,
                             color: Colors.black,
-                            blurRadius: 8,
-                            offset: Offset(0, 2),
+                            offset: Offset(0, 1),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Buttons row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _signInWithFacebook,
+                          icon: const FaIcon(
+                            FontAwesomeIcons.facebook,
+                            color: Colors.white,
+                          ),
+                          label: const Text('Facebook'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF3b5998),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        ElevatedButton.icon(
+                          onPressed: _signInWithTikTok,
+                          icon: const FaIcon(
+                            FontAwesomeIcons.tiktok,
+                            color: Colors.white,
+                          ),
+                          label: const Text('TikTok'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: () {
+                        // Allow closing without signing in (continue as guest)
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text(
+                        'Continue as Guest',
+                        style: TextStyle(color: Colors.white),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
-        ],
       ),
     );
   }
