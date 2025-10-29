@@ -71,7 +71,7 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(nameText);
 
-    // League badge shown beside name (like a verified tick)
+    // League badge shown beside name
     try {
       String badgeAsset = 'Bronze I.png';
       if (league.toLowerCase() == 'silver') badgeAsset = 'Silver II.png';
@@ -80,8 +80,10 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
       final badge = SpriteComponent(
         sprite: badgeSprite,
         size: Vector2(40, 40),
-        // Nudge the badge slightly down so it aligns visually with name
-        position: Vector2(game.size.x / 2 + 110, 258),
+        // Nudge the badge slightly down so it aligns visually with name.
+        // Position it to the LEFT of the player name (same horizontal
+        // offset as the previous right-side placement).
+        position: Vector2(game.size.x / 2 - 110, 250),
         anchor: Anchor.center,
       );
       add(badge);

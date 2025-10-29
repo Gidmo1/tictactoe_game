@@ -10,10 +10,10 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'service/competition_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'models/competition.dart';
-// auth_gate removed from this screen; tournament flow shouldn't force sign-in here
 
-// ======= BUTTONS =======
+// Buttons
 
 class _ReturnButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
@@ -72,7 +72,7 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
   }
 }
 
-// Simple text button (no external sprite) for the offline retry UI
+// Text button and retry.png to retry.s
 class _TextButton extends PositionComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String text;
@@ -125,7 +125,7 @@ class _TextButton extends PositionComponent with TapCallbacks {
   }
 }
 
-// ======= LEADERBOARD CARD =======
+// Leaderboard Card
 
 class LeaderboardCardComponent extends PositionComponent {
   final int rank;
@@ -231,8 +231,7 @@ class LeaderboardCardComponent extends PositionComponent {
   }
 }
 
-// ======= SCROLLABLE LEADERBOARD =======
-
+// Scrollable Leaderboard
 class _ScrollableLeaderboardContainer extends PositionComponent
     with DragCallbacks {
   final List<Map<String, dynamic>> entries;
@@ -261,28 +260,30 @@ class _ScrollableLeaderboardContainer extends PositionComponent
     removeAll(children);
     cardComponents.clear();
 
+    // Show placeholders when the leaderboard is empty.
+    List<Map<String, dynamic>> renderEntries = entries;
     if (entries.isEmpty) {
-      add(
-        TextComponent(
-          text: 'No leaderboard data available.',
-          position: Vector2(width / 2, height / 2),
-          anchor: Anchor.center,
-          textRenderer: TextPaint(
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      );
-      return;
+      renderEntries = List.generate(8, (i) {
+        final names = [
+          'Alex',
+          'Jordan',
+          'Sam',
+          'Gidmo',
+          'Chris',
+          'Morgan',
+          'Riley',
+          'Casey',
+          'Jamie',
+          'Dakota',
+        ];
+        return {'name': names[i % names.length], 'score': (10 - i) * 50};
+      });
     }
 
-    for (int i = 0; i < entries.length; i++) {
+    for (int i = 0; i < renderEntries.length; i++) {
       final rank = i + 1;
-      final name = entries[i]['name'] ?? 'Player';
-      final score = entries[i]['score'] ?? 0;
+      final name = renderEntries[i]['name'] ?? 'Player';
+      final score = renderEntries[i]['score'] ?? 0;
 
       final Color cardColor = rank <= 3
           ? const Color.fromARGB(255, 74, 104, 67)
@@ -346,13 +347,13 @@ class _ScrollableLeaderboardContainer extends PositionComponent
   }
 }
 
-// ======= COMPETITION SCREEN =======
+// Competition screen
 
 class CompetitionScreen extends Component with HasGameReference {
   List<Map<String, dynamic>> leaderboardEntries = [];
   late SpriteComponent loadingIndicator;
   final FirebaseFunctions functions = FirebaseFunctions.instance;
-  // Confetti state for award celebrations
+  // Confetti for award celebration
   bool confettiRunning = false;
   final Random _random = Random();
   final List<Component> _confettiPieces = [];
@@ -494,7 +495,7 @@ class CompetitionScreen extends Component with HasGameReference {
         text: 'Retry',
         position: (game.size / 2) + Vector2(0, 40),
         onPressed: () async {
-          // Quick connectivity re-check
+          // Connectivity re-check
           bool nowOnline = true;
           try {
             final result = await InternetAddress.lookup(
@@ -506,11 +507,11 @@ class CompetitionScreen extends Component with HasGameReference {
           }
 
           if (nowOnline) {
-            // remove offline UI and continue
+            // remove the offline UI stuffs and continue
             offlineText.removeFromParent();
             retryButton.removeFromParent();
             add(loadingIndicator);
-            await _buildLeaderboardUI();
+            await _showLeaderboardUI();
           }
         },
       );
@@ -518,13 +519,13 @@ class CompetitionScreen extends Component with HasGameReference {
       return;
     }
 
-    // If online, proceed to build the leaderboard UI
-    await _buildLeaderboardUI();
+    // If online, show the leaderboadUi
+    await _showLeaderboardUI();
   }
 
-  Future<void> _buildLeaderboardUI() async {
+  Future<void> _showLeaderboardUI() async {
     // Fetch leaderboard
-    leaderboardEntries = await _fetchTopPlayers(10); // top 10 now
+    leaderboardEntries = await _fetchTopPlayers(8); // top 8
 
     remove(loadingIndicator);
 
@@ -559,7 +560,8 @@ class CompetitionScreen extends Component with HasGameReference {
     final playSprite = await game.loadSprite('play.png');
     final buttonWidth = 220.0;
     final buttonHeight = 56.0;
-    final bottomStartY = game.size.y - buttonHeight - 30;
+    // move the button a little lower (smaller top margin)
+    final bottomStartY = game.size.y - buttonHeight - 10;
 
     final fb.User? fbUser = fb.FirebaseAuth.instance.currentUser;
     final svc = CompetitionService();
@@ -569,12 +571,20 @@ class CompetitionScreen extends Component with HasGameReference {
     final weekId = svc.getCurrentWeekId();
 
     bool userJoined = false;
+    // First try cloud function
     if (fbUser != null) {
       final entry = await svc.getUserEntry(weekId, fbUser.uid);
       userJoined = entry != null;
     }
 
-    // Determine current user's persistent league (default to bronze)
+    //If cloud function didn't find an entry, use the player side to join a tournament, so play button will show instead of join tournament button after the user joins
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final localJoined = prefs.getBool('joinedTournament_$weekId') ?? false;
+      userJoined = userJoined || localJoined;
+    } catch (_) {}
+
+    // Determine current user's league (the default is bronze for beginners or mew players in the game)
     String userLeague = 'bronze';
     try {
       if (fbUser != null) {
@@ -597,7 +607,7 @@ class CompetitionScreen extends Component with HasGameReference {
       userLeague = 'bronze';
     }
 
-    // Medal sprites (use unlocked images if user's league matches or exceeds the medal tier)
+    // League sprites (use unlocked images for the league the user is currently in and the league the user has passed. Locked images for the league the user has not reached)
     final goldSprite = await Sprite.load(
       userLeague == 'gold' ? 'Gold III.png' : 'Gold III_locked.png',
     );
@@ -648,9 +658,9 @@ class CompetitionScreen extends Component with HasGameReference {
             // start confetti celebration
             _startConfetti();
 
-            // Show award overlay: trophy sprite + message + Claim button
+            // Show award overlay
             final trophySprite = await Sprite.load('${trophyKey}.png');
-            // Prefer a confirmation-style overlay if available, fall back to leaderboard background
+            // Use the confirmation-style overlay if available, fall back to leaderboard background
             Sprite overlaySprite;
             try {
               overlaySprite = await Sprite.load('confirmation_overlay.png');
@@ -683,7 +693,7 @@ class CompetitionScreen extends Component with HasGameReference {
               priority: 1001,
             );
 
-            // Claim button (use claim.png). If the sprite is missing, fall back to a text button.
+            // Claim button (use claim.png). If the sprite is missing, use a text button
             _PressdownButton? claimButtonRef;
             try {
               final claimSprite = await game.loadSprite('claim.png');
@@ -695,8 +705,7 @@ class CompetitionScreen extends Component with HasGameReference {
                 size: Vector2(180, 56),
                 onPressed: () async {
                   try {
-                    // mark award read via Cloud Function to keep writes
-                    // server-authoritative and avoid client-side permission issues
+                    // mark award read via Cloud Function to keep writes and avoid player side to write
                     final callable = functions.httpsCallable('markAwardRead');
                     await callable.call({
                       'playerId': fbUser.uid,
@@ -716,7 +725,7 @@ class CompetitionScreen extends Component with HasGameReference {
               add(msg);
               add(claimButtonLocal);
             } catch (_) {
-              // Sprite load failed — use a simple text button as fallback
+              // If sprite load failed, use a text button for the user to be able to claim their trophy rewards.
               final claimY = overlayBg.position.y + overlayBg.size.y - 40;
               final textBtn = _TextButton(
                 text: 'Claim',
@@ -761,8 +770,8 @@ class CompetitionScreen extends Component with HasGameReference {
           position: Vector2(game.size.x / 2, bottomStartY),
           size: Vector2(buttonWidth, buttonHeight),
           onPressed: () async {
-            // Ensure auth is stabilized and token refreshed before calling the server
-            final user = await svc.ensureSignedIn();
+            // Ensure auth is stable and token refreshed before calling the server
+            final user = await svc.waitForSignIn();
             if (user == null) {
               try {
                 ScaffoldMessenger.of(game.buildContext!).showSnackBar(
@@ -783,14 +792,19 @@ class CompetitionScreen extends Component with HasGameReference {
               draws: 0,
               losses: 0,
               joinedAt: DateTime.now(),
-              league: '',
+              league: '$userLeague',
             );
             try {
               await svc.joinTournament(weekId, entry);
+              // Returning to the Competition screen shows Play immediately even if the server-side(cloud function) entry is not visible yet
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('joinedTournament_$weekId', true);
+              } catch (_) {}
               // replace this button with Play: push tournament route
               goToTournament();
             } catch (e) {
-              // Show an unobtrusive error and allow the user to retry.
+              // Show an error and allow the user to retry.
               try {
                 ScaffoldMessenger.of(game.buildContext!).showSnackBar(
                   const SnackBar(
@@ -812,10 +826,7 @@ class CompetitionScreen extends Component with HasGameReference {
           position: Vector2(game.size.x / 2, bottomStartY),
           size: Vector2(buttonWidth, buttonHeight),
           onPressed: () async {
-            // User pressed Play: record an auto-search request in both the
-            // in-memory game flag and a short-lived SharedPreferences key so
-            // the Tournament screen reliably sees the request even if the
-            // game instance isn't accessible at the moment of navigation.
+            // when user pressed play: record an auto search request in both the in-memory game flag and a SharedPreferences key so the Tournament screen sees the request even if the game mode isn't accessible at the moment of navigation.
             final flameGame = findGame();
             if (flameGame != null) {
               try {
@@ -825,6 +836,7 @@ class CompetitionScreen extends Component with HasGameReference {
                 );
               } catch (_) {}
             }
+
             // Note: we no longer persist a flag; the game-level in-memory
             // flag is used and the router will trigger matchmaking on route
             // change. This avoids lifecycle persistence issues.

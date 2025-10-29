@@ -13,7 +13,7 @@ void main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // 🔹 Initialize Flame and audio
+  // Initialize Flame and audio
   await Flame.device.fullScreen();
   await Flame.device.setPortraitUpOnly();
 
@@ -62,13 +62,13 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // 🔹 Link listening for dynamic invite links
+    // Link listening for dynamic invite links
     LinkService.startListening(context, (matchId) {
-      debugPrint('🎮 Joining match from link: $matchId');
+      debugPrint('Joining match from link: $matchId');
       _game.joinMatch(matchId);
     });
 
-    // 🔹 Cold start (when opened directly from a link)
+    // Cold start (opened from a link)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final matchId = await LinkService.getInitialLinkIfAny();
       if (matchId != null) {
@@ -85,7 +85,7 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
     super.dispose();
   }
 
-  // 🔹 Handle app pause/resume
+  // Handle app pause/resume
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -110,7 +110,7 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
     return GameWidget(
       game: _game,
       overlayBuilderMap: {
-        // ✅ Success login overlay
+        // Success login overlay
         'confirmation': (context, game) {
           final msg = (game as TicTacToeGame?)?.lastMessage ?? '';
           final username = (game as TicTacToeGame?)?.loggedInUser ?? '';
@@ -163,11 +163,11 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
           );
         },
 
-        // ✅ Loading overlay
+        // Loading overlay
         'loading': (context, game) =>
             const Center(child: CircularProgressIndicator(color: Colors.white)),
 
-        // ✅ Message overlay
+        // Message overlay
         'message': (context, game) {
           final msg = (game as TicTacToeGame?)?.lastMessage ?? '';
           if (msg.isEmpty) return const SizedBox.shrink();

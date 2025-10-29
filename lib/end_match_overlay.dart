@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 
 class EndMatchOverlay extends PositionComponent {
-  /// whether the human won (true), lost (false) or draw (both equal handled by didDraw)
+  /// Whether the human won, lost, or drew.
   final bool didWin;
   final bool didDraw;
   final VoidCallback onNext;

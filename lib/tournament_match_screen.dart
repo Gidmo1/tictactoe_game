@@ -20,9 +20,8 @@ class TournamentMatchScreen extends Component {
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
 
     // Detect if this view was opened by a user who already joined the
-    // tournament (Competition -> Play). Historically we showed an
-    // informational view in that case; however if the Competition screen
-    // explicitly requested matchmaking we should auto-start the search.
+    // tournament. If the Competition screen requested matchmaking,
+    // we'll auto-start the search.
     final flameGame = findGame();
     final bool joinedView =
         flameGame != null &&
@@ -111,7 +110,7 @@ class TournamentMatchScreen extends Component {
     // If the Competition screen asked us to auto-start matchmaking, do that
     // now after the UI is in place.
     if (autoSearch) {
-      // Fire-and-forget; _startMatchmaking guards against double-calls.
+      // Schedule start; _startMatchmaking prevents duplicate calls.
       Future.microtask(() => _startMatchmaking());
     }
   }
@@ -133,7 +132,7 @@ class TournamentMatchScreen extends Component {
     statusText?.text = 'Searching for opponent...';
 
     final svc = CompetitionService();
-    final user = await svc.ensureSignedIn();
+    final user = await svc.waitForSignIn();
     final userId =
         user?.uid ?? 'guest_${DateTime.now().millisecondsSinceEpoch}';
     final tournamentId =
@@ -152,7 +151,7 @@ class TournamentMatchScreen extends Component {
         return;
       }
 
-      // Debug: show raw returned data in logs and UI so user can inspect CF response
+      // Log response and update the status text.
       try {
         debugPrint('matchmakeForTournament result: $data');
         statusText?.text = 'Matchmaking response: ${data.toString()}';
@@ -212,13 +211,12 @@ class TournamentMatchScreen extends Component {
     }
   }
 
-  /// Public entrypoint so external controllers (router/game) can trigger
-  /// matchmaking reliably. Calls the internal _startMatchmaking() guard.
+  /// Public entrypoint so external controllers can trigger matchmaking.
   void startMatchmaking() {
     debugPrint(
       'TournamentMatchScreen.startMatchmaking invoked ts=${DateTime.now().toIso8601String()} _isSearching=$_isSearching',
     );
-    // Fire-and-forget; the private method guards against duplicates.
+    // Schedule start; the private method prevents duplicate work.
     Future.microtask(() => _startMatchmaking());
   }
 

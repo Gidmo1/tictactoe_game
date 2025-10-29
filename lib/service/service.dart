@@ -8,16 +8,14 @@ class UserService {
       .collection('Users');
 
   Future<void> saveUser(User user) async {
-    // Use a server-side callable to save/update profile to avoid client-side
-    // authoritative writes that could be abused.
+    // Save/update profile via server callable to prevent client-side writes.
     try {
       final callable = FirebaseFunctions.instanceFor(
         region: 'us-central1',
       ).httpsCallable('saveUserProfile');
       await callable.call({'userId': user.id, 'profile': user.toJson()});
     } catch (e) {
-      // Fallback to local write if callable fails (preserve previous behavior),
-      // but prefer server authoritative writes.
+      // If the callable fails, fall back to a local write to preserve data.
       await _usersCollection.doc(user.id).set(user.toJson());
     }
   }
@@ -36,8 +34,7 @@ class ScoreService {
       .collection('scores');
 
   Future<void> updateScore(Score score) async {
-    // Delegate score updates to the server callable to avoid client-side
-    // manipulation of score documents.
+    // Use server callable to update scores.
     try {
       final callable = FirebaseFunctions.instanceFor(
         region: 'us-central1',
@@ -48,8 +45,8 @@ class ScoreService {
       });
       return;
     } catch (e) {
-      // If the callable fails, optionally fallback to local transaction to
-      // avoid data loss, but prefer the server path.
+      // If the callable fails, fall back to a local transaction to
+      // avoid data loss.
       final docRef = _scoresCollection.doc(score.playerId);
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {

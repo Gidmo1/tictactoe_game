@@ -41,7 +41,7 @@ class _AuthGateState extends State<AuthGate> {
           _signedInName = displayName;
         });
 
-        // ✅ Give UI a sec to show success
+        // Give UI a second to show success
         await Future.delayed(const Duration(seconds: 1));
 
         if (mounted) {
@@ -51,9 +51,9 @@ class _AuthGateState extends State<AuthGate> {
           // Notify parent (if any)
           widget.onLoginSuccess?.call();
 
-          // ✅ Navigate to Competition screen inside Flame router
+          // Navigate to Competition screen inside Flame router
           try {} catch (e) {
-            debugPrint('⚠️ Could not navigate to competition: $e');
+            debugPrint('Could not navigate to competition: $e');
           }
         }
       } else {
@@ -71,7 +71,7 @@ class _AuthGateState extends State<AuthGate> {
     return Scaffold(
       body: Stack(
         children: [
-          // 🔹 Fullscreen background
+          // Fullscreen background
           SizedBox.expand(
             child: Container(
               decoration: const BoxDecoration(
@@ -87,7 +87,7 @@ class _AuthGateState extends State<AuthGate> {
             ),
           ),
 
-          // 🔹 Center Facebook login button
+          // Center Facebook login button
           Center(
             child: _loading
                 ? const CircularProgressIndicator(color: Colors.white)
@@ -152,7 +152,7 @@ class _AuthGateState extends State<AuthGate> {
                   ),
           ),
 
-          // 🔹 Signed-in message
+          // Signed-in message
           if (_signedInName != null)
             Align(
               alignment: Alignment.bottomCenter,

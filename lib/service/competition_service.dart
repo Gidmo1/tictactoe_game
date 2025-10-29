@@ -1,8 +1,5 @@
-// dart:math previously used for local percentile math; no longer needed because
-// finalizeLeagues is delegated to a Cloud Function.
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -21,7 +18,7 @@ class CompetitionService {
        _functions =
            functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
-  /// Returns a week id like "2025-W42" for the current date/time.
+  // Returns a week id like 2025-W42 for the current date/time.
   String getCurrentWeekId([DateTime? forDate]) {
     final now = forDate ?? DateTime.now().toUtc();
     final year = now.year;
@@ -38,10 +35,8 @@ class CompetitionService {
   CollectionReference<Map<String, dynamic>> _entriesRef(String weekId) =>
       _db.collection('competitions').doc(weekId).collection('entries');
 
-  /// Ensure there is a signed-in user and refresh their ID token.
-  /// Returns the signed-in [fb.User] or null if none available within the
-  /// timeout. This does NOT perform an automatic anonymous sign-in.
-  Future<fb.User?> ensureSignedIn({
+  // Wait for a signed-in user and refresh their ID token.
+  Future<fb.User?> waitForSignIn({
     Duration timeout = const Duration(seconds: 5),
   }) async {
     final auth = fb.FirebaseAuth.instance;
@@ -66,16 +61,15 @@ class CompetitionService {
             .timeout(const Duration(seconds: 2));
       } catch (_) {}
     } catch (e) {
-      debugPrint('Token refresh/propagation failed in ensureSignedIn: $e');
+      debugPrint('Token refresh failed while waiting for sign-in: $e');
     }
 
-    // Diagnostic: log project/region to aid debugging if callables still see
-    // unauthenticated. Keep this lightweight and only log in debug builds.
+    // Log project and functions region for debugging in dev builds.
     try {
       final proj = Firebase.app().options.projectId;
-      debugPrint('ensureSignedIn: Firebase projectId=$proj');
+      debugPrint('waitForSignIn: Firebase projectId=$proj');
       // Also log the default functions region we use
-      debugPrint('ensureSignedIn: Functions region=us-central1');
+      debugPrint('waitForSignIn: Functions region=us-central1');
     } catch (_) {}
 
     return user;
@@ -84,7 +78,7 @@ class CompetitionService {
   /// User joins a tournament (creates entry if not exists)
   Future<void> joinTournament(String weekId, CompetitionEntry entry) async {
     // Ensure the user is signed in and the ID token is fresh/propagated
-    final fb.User? user = await ensureSignedIn();
+    final fb.User? user = await waitForSignIn();
     if (user == null) {
       throw StateError('User not signed in');
     }
@@ -98,7 +92,7 @@ class CompetitionService {
     final callable = functionsClient.httpsCallable('joinTournament');
     try {
       await callable.call({'weekId': weekId, 'userName': entry.userName});
-      debugPrint('✅ joinTournament requested via Cloud Function.');
+      debugPrint('joinTournament requested via Cloud Function.');
     } on FirebaseFunctionsException catch (fe) {
       if (fe.code == 'unauthenticated') {
         // Try a single refresh+retry
@@ -119,14 +113,13 @@ class CompetitionService {
             'weekId': weekId,
             'userName': entry.userName,
           });
-          debugPrint('✅ joinTournament requested after token refresh.');
+          debugPrint('joinTournament requested after token refresh.');
         } catch (e) {
-          debugPrint('❌ joinTournament still unauthenticated after retry: $e');
+          debugPrint('joinTournament still unauthenticated after retry: $e');
 
-          // As a last-resort, try a client-side Firestore write.
-          // If the user is signed-in, the Firestore client may still have
-          // valid credentials even when the Functions callable appears
-          // unauthenticated due to a plugin propagation issue.
+          // If the callable remains unauthenticated, try a client-side
+          // Firestore write as a fallback (may succeed if Firestore has
+          // valid credentials).
           try {
             final entryRef = _entriesRef(weekId).doc(user.uid);
             await entryRef.set({
@@ -140,17 +133,16 @@ class CompetitionService {
               'league': '',
             }, SetOptions(merge: true));
             debugPrint(
-              '✅ joinTournament: created entry via client-side Firestore fallback.',
+              'joinTournament: created entry via client-side Firestore fallback.',
             );
             return;
           } catch (fsErr) {
             debugPrint('Firestore fallback failed: $fsErr');
           }
 
-          // If Firestore fallback failed, attempt calling the callable via the
-          // HTTPS endpoint directly with an explicit Authorization header.
-          // This bypasses the Flutter Functions plugin and helps distinguish
-          // between a plugin token propagation bug and a server-side issue.
+          // If the Firestore fallback fails, call the HTTPS endpoint directly
+          // with a Bearer token to help distinguish client token issues from
+          // server errors.
           try {
             final idToken = await user.getIdToken(true);
             final projectId = Firebase.app().options.projectId;
@@ -185,11 +177,11 @@ class CompetitionService {
           rethrow;
         }
       } else {
-        debugPrint('❌ Error joining tournament (callable): ${fe.message}');
+        debugPrint('Error joining tournament (callable): ${fe.message}');
         rethrow;
       }
     } catch (e) {
-      debugPrint('❌ Error joining tournament (callable): $e');
+      debugPrint('Error joining tournament (callable): $e');
       rethrow;
     }
   }
@@ -200,7 +192,7 @@ class CompetitionService {
       if (!snap.exists) return null;
       return CompetitionEntry.fromSnapshot(snap);
     } catch (e) {
-      debugPrint('❌ Error getting user entry: $e');
+      debugPrint('Error getting user entry: $e');
       return null;
     }
   }
@@ -219,7 +211,7 @@ class CompetitionService {
                 snap.docs.map((d) => CompetitionEntry.fromSnapshot(d)).toList(),
           );
     } catch (e) {
-      debugPrint('❌ Error in topEntriesStream: $e');
+      debugPrint('Error in topEntriesStream: $e');
       return Stream.value([]);
     }
   }
@@ -231,7 +223,7 @@ class CompetitionService {
       ).orderBy('xp', descending: true).get();
       return snap.docs.map((d) => CompetitionEntry.fromSnapshot(d)).toList();
     } catch (e) {
-      debugPrint('❌ Error fetching all entries: $e');
+      debugPrint('Error fetching all entries: $e');
       return [];
     }
   }
@@ -245,12 +237,12 @@ class CompetitionService {
       ).where('xp', isGreaterThan: entry.xp).get();
       return snap.docs.length + 1;
     } catch (e) {
-      debugPrint('❌ Error computing rank: $e');
+      debugPrint('Error computing rank: $e');
       return -1;
     }
   }
 
-  /// 🚀 Securely adds XP via Cloud Function (no direct Firestore write)
+  /// Adds XP via Cloud Function (no direct Firestore write)
   Future<void> addXp(
     String weekId,
     String userId,
@@ -265,23 +257,22 @@ class CompetitionService {
         'xpDelta': xpDelta,
         'outcome': outcome ?? '',
       });
-      print('✅ XP update sent via Cloud Function.');
+      print('XP update sent via Cloud Function.');
     } catch (e) {
-      debugPrint('❌ Error calling updateScore Cloud Function: $e');
+      debugPrint('Error calling updateScore Cloud Function: $e');
       rethrow;
     }
   }
 
   /// Assign league tiers (gold/silver/bronze) based on XP percentiles
   Future<void> finalizeLeagues(String weekId) async {
-    // Finalize leagues server-side. Delegate to a Cloud Function so the
-    // authoritative computation and writes happen on the server (admin SDK).
+    // Finalize leagues server-side via a Cloud Function.
     try {
       final callable = _functions.httpsCallable('finalizeLeagues');
       await callable.call({'weekId': weekId});
-      debugPrint('✅ finalizeLeagues requested via Cloud Function.');
+      debugPrint('finalizeLeagues requested via Cloud Function.');
     } catch (e) {
-      debugPrint('❌ Error calling finalizeLeagues Cloud Function: $e');
+      debugPrint('Error calling finalizeLeagues Cloud Function: $e');
       rethrow;
     }
   }
@@ -292,11 +283,10 @@ class CompetitionService {
     required String userId,
     required String userName,
   }) async {
-    // Delegate matchmaking to the server to ensure authoritative match
-    // creation/claiming (prevents race conditions and bypasses security rules).
+    // Matchmaking is handled server-side to avoid client-side races and
+    // enforce rules.
     try {
-      // Diagnostic: log current user and a short idToken fingerprint so we
-      // can detect token propagation issues in the wild.
+      // Log a short idToken fingerprint to help debug authentication issues.
       try {
         final fb.User? u = fb.FirebaseAuth.instance.currentUser;
         if (u != null) {
@@ -324,7 +314,7 @@ class CompetitionService {
       final data = result.data as Map<String, dynamic>;
       return Map<String, dynamic>.from(data);
     } catch (e) {
-      debugPrint('❌ Error calling matchmakeForTournament Cloud Function: $e');
+      debugPrint('Error calling matchmakeForTournament Cloud Function: $e');
       rethrow;
     }
   }
@@ -337,26 +327,22 @@ class CompetitionService {
 
       final top3 = entries.take(3).toList();
       final message = StringBuffer()
-        ..writeln('🏆 TicTacToe Weekly Results ($weekId)')
+        ..writeln('TicTacToe Weekly Results ($weekId)')
         ..writeln('')
-        ..writeln('🥇 1st: ${top3[0].userName} — ${top3[0].xp} XP')
+        ..writeln('1st: ${top3[0].userName} — ${top3[0].xp} XP')
         ..writeln(
-          top3.length > 1
-              ? '🥈 2nd: ${top3[1].userName} — ${top3[1].xp} XP'
-              : '',
+          top3.length > 1 ? '2nd: ${top3[1].userName} — ${top3[1].xp} XP' : '',
         )
         ..writeln(
-          top3.length > 2
-              ? '🥉 3rd: ${top3[2].userName} — ${top3[2].xp} XP'
-              : '',
+          top3.length > 2 ? '3rd: ${top3[2].userName} — ${top3[2].xp} XP' : '',
         )
         ..writeln('')
-        ..writeln('Keep grinding for next week’s leaderboard! 💪');
+        ..writeln('Keep up the good work for next week\'s leaderboard.');
 
       // NOTE: Replace this with your server or WhatsApp Cloud API call.
-      debugPrint('📱 WhatsApp update would be sent:\n$message');
+      debugPrint('WhatsApp update would be sent:\n$message');
     } catch (e) {
-      debugPrint('❌ Error sending WhatsApp update: $e');
+      debugPrint('Error sending WhatsApp update: $e');
     }
   }
 }

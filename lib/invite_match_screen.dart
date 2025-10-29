@@ -140,9 +140,8 @@ class TicTacToeInviteScreen extends Component {
                 : (data['winnerUID'] == myUID ? "You win!" : "You lose!");
             _startConfetti();
 
-            // Server-side trigger (onTournamentMatchFinalized or onMatchFinalized)
-            // will handle awarding XP and setting 'scored'. Do not attempt to
-            // update scoring from the client to avoid cheating.
+            // Server-side trigger will handle awarding XP and marking scores.
+            // The client should not write score documents.
           } else {
             final fb.User? firebaseUser = fb.FirebaseAuth.instance.currentUser;
             final myUID = firebaseUser?.uid ?? '';
@@ -157,26 +156,25 @@ class TicTacToeInviteScreen extends Component {
     if (!doc.exists) {
       try {
         final svc = CompetitionService();
-        final user = await svc.ensureSignedIn();
+        final user = await svc.waitForSignIn();
         if (user == null) return;
         final callable = functions.httpsCallable('createMatch');
         await callable.call({'matchId': matchId, 'playerId': user.uid});
       } catch (e) {
-        debugPrint("⚠️ Error creating match via Cloud Function: $e");
+        debugPrint("Error creating match via Cloud Function: $e");
       }
     }
   }
 
-  // Scoring for tournament matches is performed server-side by the
-  // `onTournamentMatchFinalized` Cloud Function trigger. We intentionally
-  // avoid making score writes from the client to prevent cheating.
+  // Scoring for tournament matches is handled server-side; client must not
+  // write scores.
 
   void handleTap(int row, int col) async {
     if (gameOver || board[row * 3 + col] != '') return;
 
     // Ensure user is signed in and token propagated before attempting move
     final svc = CompetitionService();
-    final user = await svc.ensureSignedIn();
+    final user = await svc.waitForSignIn();
     if (user == null) return;
     if (currentPlayer != user.uid) return; // only allow your turn
 
@@ -207,7 +205,7 @@ class TicTacToeInviteScreen extends Component {
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Error calling makeMove Cloud Function: $e');
+      debugPrint('Error calling makeMove Cloud Function: $e');
     }
   }
 
@@ -217,7 +215,7 @@ class TicTacToeInviteScreen extends Component {
     // Leave tournament queue if necessary
     try {
       final svc = CompetitionService();
-      final user = await svc.ensureSignedIn();
+      final user = await svc.waitForSignIn();
       if (user != null) {
         final matchDoc = await firestore
             .collection('matches')
@@ -234,7 +232,7 @@ class TicTacToeInviteScreen extends Component {
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Error leaving tournament queue: $e');
+      debugPrint('Error leaving tournament queue: $e');
     }
 
     final flameGame = findGame();

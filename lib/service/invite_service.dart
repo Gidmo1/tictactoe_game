@@ -32,12 +32,12 @@ class InviteService {
 
   // Share link via WhatsApp (or copy to clipboard if not available)
   Future<void> shareViaWhatsApp(BuildContext context, String matchId) async {
-    // deepLink intentionally not used for WhatsApp sharing; web fallback used
+    // Use web fallback for WhatsApp sharing
     final webFallback = createWebFallbackLink(matchId);
 
     // WhatsApp only highlights clickable HTTP/HTTPS URLs, not custom schemes
     final encodedMessage = Uri.encodeComponent(
-      '🎮 Join my TicTacToe game and let\'s play! Who do you think will win? \nTap below to join:\n👉 $webFallback',
+      'Join my TicTacToe game! Tap the link to join: $webFallback',
     );
 
     final whatsappUrl = Uri.parse('https://wa.me/?text=$encodedMessage');
@@ -64,7 +64,7 @@ class InviteService {
           ),
         );
       }
-      debugPrint(' WhatsApp share failed: $e');
+      debugPrint('WhatsApp share failed: $e');
     }
   }
 

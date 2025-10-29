@@ -22,7 +22,7 @@ import 'invite_match_screen.dart';
 import 'link_handler.dart';
 import 'tournament_match_screen.dart';
 
-// Small observing router so we can run a callback when routes are pushed.
+// Lightweight router that runs a callback when routes change.
 class ObservingRouter extends RouterComponent {
   final void Function(String routeName)? onRouteChanged;
 
@@ -87,7 +87,7 @@ class TicTacToeGame extends FlameGame
       await FlameAudio.bgm.play('background_music.mp3', volume: 0.7);
       _isMenuMusicPlaying = true;
     } catch (e) {
-      debugPrint('⚠️ Error starting menu music: $e');
+      debugPrint('Error starting menu music: $e');
       _isMenuMusicPlaying = false;
     }
   }
@@ -100,7 +100,7 @@ class TicTacToeGame extends FlameGame
     try {
       await FlameAudio.bgm.stop();
     } catch (e) {
-      debugPrint('⚠️ Error stopping menu music: $e');
+      debugPrint('Error stopping menu music: $e');
     }
     _isMenuMusicPlaying = false;
   }
@@ -112,10 +112,8 @@ class TicTacToeGame extends FlameGame
     debugPrint(
       'handleRouteChange: route=$routeName pendingTournamentAutoSearch=$pendingTournamentAutoSearch ts=${DateTime.now().toIso8601String()}',
     );
-    // If the Competition screen requested an immediate tournament search
-    // and we're navigating to the tournament route, trigger matchmaking on
-    // the TournamentMatchScreen instance if present. This avoids reliance
-    // on persisted flags and works reliably across repeated navigations.
+    // If the Competition screen requested an immediate tournament search,
+    // trigger matchmaking on any TournamentMatchScreen instance found.
     if (routeName == 'tournament' && pendingTournamentAutoSearch) {
       try {
         // Clear the request immediately so it doesn't fire repeatedly.
@@ -145,7 +143,7 @@ class TicTacToeGame extends FlameGame
     }
   }
 
-  /// Called when user wants to open a specific match
+  // Open a specific match
   void openMatchWithId(String matchId, {bool isCreator = true}) {
     pendingMatchId = matchId;
     pendingMatchIsTournament = false;
@@ -161,7 +159,7 @@ class TicTacToeGame extends FlameGame
     router.pushNamed('invite');
   }
 
-  /// Handles joining a match directly (e.g. via link or invite)
+  /// Join a match directly (e.g. link or invite)
   void joinMatch(String matchId) {
     lastMessage = 'Joining match $matchId...';
     pendingMatchId = matchId;
@@ -194,7 +192,7 @@ class TicTacToeGame extends FlameGame
     SettingsScreen.buttonSoundOn = prefs.getBool('buttonSoundOn') ?? true;
     SettingsScreen.gameSoundOn = prefs.getBool('gameSoundOn') ?? true;
 
-    // Router setup: ObservingRouter so we can react to route pushes centrally.
+    // Router setup: ObservingRouter to react to route pushes centrally.
     router = ObservingRouter(
       initialRoute: 'menu',
       routes: {

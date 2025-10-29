@@ -6,10 +6,10 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/score.dart';
 
 class ScoreService {
-  // Save a score. If user is logged in, push to Firebase, if not, store locally on the user's device
+  // Save a score. If logged in, send to server; otherwise store locally.
   Future<void> saveScore(Score score, {bool loggedIn = false}) async {
     if (loggedIn) {
-      // Logged-in user, push to Firebase
+      // Logged-in: send to server
       try {
         // Ensure token is fresh before calling server
         try {
@@ -90,7 +90,7 @@ class ScoreService {
     }
   }
 
-  // Save and add sscores after sign in
+  // Sync guest scores to the server after sign in
   Future<void> syncGuestScores(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs
@@ -116,9 +116,7 @@ class ScoreService {
       }
       await prefs.remove(key);
     }
-    debugPrint(
-      'All guest scores moved to Firebase and local storage info cleared.',
-    );
+    debugPrint('Guest scores synced to Firebase; local cache cleared.');
   }
 
   String _scoreResult(Score score) {
