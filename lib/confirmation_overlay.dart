@@ -105,7 +105,7 @@ class _OverlayButton extends SpriteComponent with TapCallbacks {
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
 
-    // Arcade bounce effect
+    // Button bounce effect
     add(
       SequenceEffect([
         ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),

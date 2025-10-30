@@ -15,8 +15,8 @@ class UserService {
       ).httpsCallable('saveUserProfile');
       await callable.call({'userId': user.id, 'profile': user.toJson()});
     } catch (e) {
-      // If the callable fails, fall back to a local write to preserve data.
-      await _usersCollection.doc(user.id).set(user.toJson());
+      // Do not write to Firestore from the client; surface error so caller can retry.
+      rethrow;
     }
   }
 
@@ -45,32 +45,8 @@ class ScoreService {
       });
       return;
     } catch (e) {
-      // If the callable fails, fall back to a local transaction to
-      // avoid data loss.
-      final docRef = _scoresCollection.doc(score.playerId);
-
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        final snapshot = await transaction.get(docRef);
-
-        if (!snapshot.exists) {
-          transaction.set(docRef, score.toJson());
-        } else {
-          final data = snapshot.data() as Map<String, dynamic>;
-          final existing = Score.fromJson(data);
-
-          final updated = Score(
-            playerId: score.playerId,
-            playerName: score.playerName,
-            wins: existing.wins + score.wins,
-            losses: existing.losses + score.losses,
-            draws: existing.draws + score.draws,
-            points: existing.points + score.points,
-          );
-
-          transaction.update(docRef, updated.toJson());
-        }
-      });
-      return;
+      // Do not write scores from the client; surface error so caller can retry.
+      rethrow;
     }
   }
 

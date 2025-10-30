@@ -59,6 +59,7 @@ flutter:
     - assets/images/return.png
     - assets/images/loading.png
     - assets/images/yes.png
+    - assets/images/retry.png
     - assets/images/no.png
     - assets/images/toggle_leftb.png
     - assets/images/toggle_rightb.png

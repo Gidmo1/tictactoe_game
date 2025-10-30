@@ -275,6 +275,9 @@ class _ScrollableLeaderboardContainer extends PositionComponent
           'Casey',
           'Jamie',
           'Dakota',
+          'Stephen',
+          'Daniel',
+          'Scott',
         ];
         return {'name': names[i % names.length], 'score': (10 - i) * 50};
       });
@@ -475,47 +478,97 @@ class CompetitionScreen extends Component with HasGameReference {
     if (!online) {
       remove(loadingIndicator);
 
-      final offlineText = TextComponent(
-        text: 'No internet connection.\nPlease check your connection.',
-        position: game.size / 2 - Vector2(0, 30),
-        anchor: Anchor.center,
-        textRenderer: TextPaint(
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
+      // Try to show a retry image button if available. This gives users a
+      // clear visual affordance to retry when connectivity is restored.
+      try {
+        final retrySprite = await game.loadSprite('retry.png');
+        late final _PressdownButton retryButton;
+        retryButton = _PressdownButton(
+          sprite: retrySprite,
+          position: game.size / 2 + Vector2(0, 40),
+          size: Vector2(120, 120),
+          onPressed: () async {
+            // Connectivity re-check
+            bool nowOnline = true;
+            try {
+              final result = await InternetAddress.lookup(
+                'example.com',
+              ).timeout(const Duration(seconds: 4));
+              nowOnline = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+            } catch (_) {
+              nowOnline = false;
+            }
+
+            if (nowOnline) {
+              // remove the offline UI and continue
+              retryButton.removeFromParent();
+              add(loadingIndicator);
+              await _showLeaderboardUI();
+            }
+          },
+        );
+
+        // Also add a short message above the retry button
+        final offlineText = TextComponent(
+          text: 'No internet connection. Tap to retry.',
+          position: game.size / 2 - Vector2(0, 30),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-      );
-      add(offlineText);
+        );
+        add(offlineText);
+        add(retryButton);
+      } catch (e) {
+        // If the retry sprite isn't available, fall back to a simple text
+        // message and a Retry text button.
+        final offlineText = TextComponent(
+          text: 'No internet connection.\nPlease check your connection.',
+          position: game.size / 2 - Vector2(0, 30),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+        add(offlineText);
 
-      // Retry button below the message
-      late final _TextButton retryButton;
-      retryButton = _TextButton(
-        text: 'Retry',
-        position: (game.size / 2) + Vector2(0, 40),
-        onPressed: () async {
-          // Connectivity re-check
-          bool nowOnline = true;
-          try {
-            final result = await InternetAddress.lookup(
-              'example.com',
-            ).timeout(const Duration(seconds: 4));
-            nowOnline = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
-          } catch (_) {
-            nowOnline = false;
-          }
+        // Retry button below the message
+        late final _TextButton retryButton;
+        retryButton = _TextButton(
+          text: 'Retry',
+          position: (game.size / 2) + Vector2(0, 40),
+          onPressed: () async {
+            // Connectivity re-check
+            bool nowOnline = true;
+            try {
+              final result = await InternetAddress.lookup(
+                'example.com',
+              ).timeout(const Duration(seconds: 4));
+              nowOnline = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+            } catch (_) {
+              nowOnline = false;
+            }
 
-          if (nowOnline) {
-            // remove the offline UI stuffs and continue
-            offlineText.removeFromParent();
-            retryButton.removeFromParent();
-            add(loadingIndicator);
-            await _showLeaderboardUI();
-          }
-        },
-      );
-      add(retryButton);
+            if (nowOnline) {
+              // remove the offline UI stuffs and continue
+              offlineText.removeFromParent();
+              retryButton.removeFromParent();
+              add(loadingIndicator);
+              await _showLeaderboardUI();
+            }
+          },
+        );
+        add(retryButton);
+      }
+
       return;
     }
 
@@ -837,9 +890,7 @@ class CompetitionScreen extends Component with HasGameReference {
               } catch (_) {}
             }
 
-            // Note: we no longer persist a flag; the game-level in-memory
-            // flag is used and the router will trigger matchmaking on route
-            // change. This avoids lifecycle persistence issues.
+            // Use in-memory flag; router triggers matchmaking on route change.
             debugPrint('competition: navigating to tournament route');
             goToTournament();
           },

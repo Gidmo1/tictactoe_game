@@ -118,9 +118,7 @@ class TicTacToeGame extends FlameGame
       try {
         // Clear the request immediately so it doesn't fire repeatedly.
         pendingTournamentAutoSearch = false;
-        // Find the TournamentMatchScreen component and call its public
-        // start method. We use dynamic dispatch because components are
-        // added to the router and typed access is cumbersome here.
+        // Find TournamentMatchScreen components and call their start method.
         final comps = children.whereType<Component>().where(
           (c) => c.runtimeType.toString() == 'TournamentMatchScreen',
         );
@@ -232,6 +230,27 @@ class TicTacToeGame extends FlameGame
 
     add(router);
 
+    // preload common assets that the Competition screen and matchmaking UI use
+    // (keeps the leaderboard/background from showing a black screen briefly)
+    try {
+      await images.load('leaderboard_background.png');
+      await images.load('loading.png');
+      await images.load('background.png');
+      // optional UX assets used by Competition and Tournament screens
+      await images.load('retry.png');
+      await images.load('cancel.png');
+      // Record a prefs flag indicating preload succeeded (informational).
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('assets_preloaded_v1', true);
+      } catch (_) {}
+    } catch (e) {
+      // Not fatal — if assets are missing we'll fall back to text controls.
+      // Keep this silent in production but log during development.
+      // ignore: avoid_print
+      print('Preload assets failed: $e');
+    }
+
     // Ensure music state matches menu on startup
     _handleMusicForRoute('menu');
   }
@@ -247,25 +266,14 @@ class TicTacToeGame extends FlameGame
 
     if (shouldPlay) {
       _playMenuMusic();
-    } else {
-      _stopMenuMusic();
     }
   }
 }
 
-/* ---------------------------
-   Screens / components below
-   Keep your existing behavior — I only changed MainMenu to use the game's
-   music API (so music logic is centralized).
-   --------------------------- */
-
+// Main menu screen
 class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
   TextComponent? scoreDisplay;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? scoreListener;
-
-  // Music is handled centrally by the game's route-change handler; no
-  // per-screen lifecycle hooks are needed here.
-
   @override
   Future<void> onLoad() async {
     await super.onLoad();

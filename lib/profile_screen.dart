@@ -83,7 +83,7 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
         // Nudge the badge slightly down so it aligns visually with name.
         // Position it to the LEFT of the player name (same horizontal
         // offset as the previous right-side placement).
-        position: Vector2(game.size.x / 2 - 110, 250),
+        position: Vector2(game.size.x / 2 - 115, 253),
         anchor: Anchor.center,
       );
       add(badge);

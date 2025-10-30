@@ -83,9 +83,7 @@ class CompetitionService {
       throw StateError('User not signed in');
     }
 
-    // Use a fresh Functions client for the actual call so the native plugin
-    // picks up the latest ID token. This avoids edge cases where an earlier
-    // FirebaseFunctions instance still uses a stale token.
+    // Recreate Functions client so it uses a fresh ID token.
     final functionsClient = FirebaseFunctions.instanceFor(
       region: 'us-central1',
     );
@@ -117,32 +115,8 @@ class CompetitionService {
         } catch (e) {
           debugPrint('joinTournament still unauthenticated after retry: $e');
 
-          // If the callable remains unauthenticated, try a client-side
-          // Firestore write as a fallback (may succeed if Firestore has
-          // valid credentials).
-          try {
-            final entryRef = _entriesRef(weekId).doc(user.uid);
-            await entryRef.set({
-              'userId': user.uid,
-              'userName': entry.userName,
-              'xp': 0,
-              'wins': 0,
-              'draws': 0,
-              'losses': 0,
-              'joinedAt': FieldValue.serverTimestamp(),
-              'league': '',
-            }, SetOptions(merge: true));
-            debugPrint(
-              'joinTournament: created entry via client-side Firestore fallback.',
-            );
-            return;
-          } catch (fsErr) {
-            debugPrint('Firestore fallback failed: $fsErr');
-          }
-
-          // If the Firestore fallback fails, call the HTTPS endpoint directly
-          // with a Bearer token to help distinguish client token issues from
-          // server errors.
+          // If unauthenticated, do NOT write to Firestore from the client
+          // (prevents cheating). Try a token-based REST callable fallback.
           try {
             final idToken = await user.getIdToken(true);
             final projectId = Firebase.app().options.projectId;

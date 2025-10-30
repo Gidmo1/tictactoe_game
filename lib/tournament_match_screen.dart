@@ -14,6 +14,7 @@ class TournamentMatchScreen extends Component {
   TextComponent? statusText;
   bool _isSearching = false; // Track matchmaking state
   bool _isRemoved = false; // Track if component is removed
+  Component? _searchControl; // Play or Cancel button reference
 
   @override
   Future<void> onLoad() async {
@@ -89,6 +90,7 @@ class TournamentMatchScreen extends Component {
         size: Vector2(180, 80),
         onPressed: _startMatchmaking,
       );
+      _searchControl = playButton;
       add(playButton);
     }
 
@@ -119,6 +121,8 @@ class TournamentMatchScreen extends Component {
   void onRemove() {
     super.onRemove();
     _isRemoved = true; // Mark as removed
+    // Cancel matchmaking when the user navigates away to avoid leaving
+    // stale queue entries on the server.
     _cancelMatchmaking();
     statusText?.text = 'Tap Play to find an opponent'; // reset status
   }
@@ -138,76 +142,68 @@ class TournamentMatchScreen extends Component {
     final tournamentId =
         'weekly_${DateTime.now().year}-W${_currentWeekNumber()}';
 
+    // While searching, swap the Play button to a Cancel button.
+    _showCancelControl();
+
     try {
-      final data = await svc.matchmakeForTournament(
-        weekId: tournamentId,
-        userId: userId,
-        userName: user?.displayName ?? 'Guest',
-      );
+      while (_isSearching && !_isRemoved) {
+        try {
+          final data = await svc.matchmakeForTournament(
+            weekId: tournamentId,
+            userId: userId,
+            userName: user?.displayName ?? 'Guest',
+          );
 
-      if (_isRemoved) {
-        // User left the screen, cancel anything
-        await _leaveQueue(userId, tournamentId);
-        return;
-      }
+          debugPrint('matchmakeForTournament result: $data');
 
-      // Log response and update the status text.
-      try {
-        debugPrint('matchmakeForTournament result: $data');
-        statusText?.text = 'Matchmaking response: ${data.toString()}';
-      } catch (_) {}
+          final Map<String, dynamic> dataMap = Map<String, dynamic>.from(data);
+          final status = dataMap['status'] as String? ?? 'unknown';
 
-      // `data` is expected to be a map from the matchmaker callable.
-      final Map<String, dynamic> dataMap = Map<String, dynamic>.from(data);
-      final status = dataMap['status'] as String? ?? 'unknown';
-      if (status == 'waiting') {
-        statusText?.text = 'Waiting for an opponent...';
-      } else if (status == 'matched') {
-        final matchId = dataMap['matchId'] as String?;
-
-        final flameGame = findGame();
-        if (flameGame != null && matchId != null) {
-          final g = (flameGame as dynamic);
-          g.pendingMatchId = matchId;
-          g.pendingMatchIsTournament = true;
-          // If server tells us which side we are, use it; otherwise assume X
-          if (dataMap.containsKey('youAre') && dataMap['youAre'] is String) {
-            final raw = (dataMap['youAre'] as String).trim();
-            // Accept either 'playerO'/'playerX' (server) or legacy 'O'/'X'
-            if (raw == 'playerO' ||
-                raw == 'youareplayerO' ||
-                raw == 'playero' ||
-                raw.toLowerCase() == 'youareplayero') {
-              g.myPlayerSymbol = 'O';
-            } else if (raw == 'playerX' ||
-                raw == 'youareplayerX' ||
-                raw == 'playerx' ||
-                raw.toLowerCase() == 'youareplayerx') {
-              g.myPlayerSymbol = 'X';
-            } else if (raw == 'O' || raw == 'X') {
-              g.myPlayerSymbol = raw;
-            } else {
-              // Fallback: take last char if it's X or O
-              final last = raw.isNotEmpty ? raw.characters.last : 'X';
-              g.myPlayerSymbol = (last == 'O' || last == 'X') ? last : 'X';
-            }
-          } else {
-            g.myPlayerSymbol = 'X';
+          if (status == 'waiting' || status == 'already_in_queue') {
+            statusText?.text = 'Waiting for an opponent...';
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
           }
-          g.router.pushNamed('invite');
+
+          if (status == 'matched') {
+            final matchId = dataMap['matchId'] as String?;
+            final flameGame = findGame();
+            if (flameGame != null && matchId != null) {
+              final g = (flameGame as dynamic);
+              g.pendingMatchId = matchId;
+              g.pendingMatchIsTournament = true;
+              if (dataMap.containsKey('youAre') &&
+                  dataMap['youAre'] is String) {
+                final raw = (dataMap['youAre'] as String).trim();
+                if (raw.toLowerCase().contains('o'))
+                  g.myPlayerSymbol = 'O';
+                else
+                  g.myPlayerSymbol = 'X';
+              } else {
+                g.myPlayerSymbol = 'X';
+              }
+              // Navigate to match/invite screen
+              _isSearching = false;
+              _restorePlayControl();
+              g.router.pushNamed('invite');
+              return;
+            }
+          }
+
+          statusText?.text = 'Unknown status: $status';
+          break;
+        } catch (e) {
+          if (!_isRemoved) {
+            statusText?.text = 'Matchmaking error. Retrying...';
+            debugPrint('Matchmaking error: $e');
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
         }
-      } else if (status == 'already_in_queue') {
-        statusText?.text = 'You are already in the queue. Waiting...';
-      } else {
-        statusText?.text = 'Unknown status: $status';
-      }
-    } catch (e) {
-      if (!_isRemoved) {
-        statusText?.text = 'Matchmaking failed. Try again.';
-        debugPrint('Matchmaking error: $e');
       }
     } finally {
       _isSearching = false;
+      _restorePlayControl();
     }
   }
 
@@ -222,13 +218,22 @@ class TournamentMatchScreen extends Component {
 
   Future<void> _cancelMatchmaking() async {
     if (!_isSearching) return;
+    // Update UI immediately before the network call.
+    _isSearching = false;
+    statusText?.text = 'Tap Play to find an opponent';
+    _restorePlayControl();
+
     final fbUser = FirebaseAuth.instance.currentUser;
     final userId =
         fbUser?.uid ?? 'guest_${DateTime.now().millisecondsSinceEpoch}';
     final tournamentId =
         'weekly_${DateTime.now().year}-W${_currentWeekNumber()}';
-    await _leaveQueue(userId, tournamentId);
-    _isSearching = false;
+    // Send leave request; UI already restored.
+    try {
+      await _leaveQueue(userId, tournamentId);
+    } catch (e) {
+      debugPrint('Error while leaving queue: $e');
+    }
   }
 
   Future<void> _leaveQueue(String playerId, String tournamentId) async {
@@ -249,6 +254,49 @@ class TournamentMatchScreen extends Component {
     final startOfYear = DateTime(now.year, 1, 1);
     final daysPassed = now.difference(startOfYear).inDays + 1;
     return ((daysPassed + startOfYear.weekday) / 7).ceil();
+  }
+
+  // Swap the on-screen Play button to a Cancel button while searching.
+  void _showCancelControl() {
+    try {
+      final flameGame = findGame();
+      final pos = flameGame?.size != null ? flameGame!.size / 2 : Vector2(0, 0);
+      // Remove existing control if present
+      try {
+        _searchControl?.removeFromParent();
+      } catch (_) {}
+
+      final cancelBtn = PlayButton(
+        imagePath: 'cancel.png',
+        position: pos,
+        size: Vector2(180, 80),
+        onPressed: _cancelMatchmaking,
+      );
+      _searchControl = cancelBtn;
+      add(cancelBtn);
+    } catch (_) {}
+  }
+
+  // Restore the Play button in place of the Cancel button.
+  void _restorePlayControl() {
+    try {
+      final flameGame = findGame();
+      final pos = flameGame?.size != null ? flameGame!.size / 2 : Vector2(0, 0);
+      try {
+        _searchControl?.removeFromParent();
+      } catch (_) {}
+
+      final playBtn = PlayButton(
+        imagePath: 'play.png',
+        position: pos,
+        size: Vector2(180, 80),
+        onPressed: _startMatchmaking,
+      );
+      _searchControl = playBtn;
+      add(playBtn);
+      // Update status text to the neutral state when Play is restored.
+      statusText?.text = 'Tap Play to find an opponent';
+    } catch (_) {}
   }
 }
 

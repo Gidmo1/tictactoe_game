@@ -100,9 +100,7 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
           _game.playMenuMusic();
         }
       }
-    } catch (_) {
-      // Audio not initialized yet, ignore
-    }
+    } catch (_) {}
   }
 
   @override

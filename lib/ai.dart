@@ -12,12 +12,12 @@ class TicTacToeAI {
     final empties = _emptyCells(board);
     if (empties.isEmpty) return [-1, -1];
 
-    // AI mistake chance (based on level)
+    // Mistake chance by level
     final mistakeChance = _getMistakeChance(level);
 
-    // Decide whether AI will play dumb or smart
+    // Possibly make a weaker move
     if (_random.nextDouble() < mistakeChance) {
-      return _randomMove(board); // make a dumb move
+      return _randomMove(board); // make a weaker move
     }
 
     // Try to win or block, else random
@@ -46,9 +46,7 @@ class TicTacToeAI {
     return _randomMove(board);
   }
 
-  // ---------------------------
-  // HELPERS
-  // ---------------------------
+  // Helpers
 
   List<List<int>> _emptyCells(List<List<String>> board) {
     final empties = <List<int>>[];
@@ -138,7 +136,7 @@ class TicTacToeAI {
   }
 
   double _getMistakeChance(int level) {
-    // Higher level = fewer mistakes
+    // Higher level means fewer mistakes
     if (level <= 1) return 0.9; // 90% dumb
     if (level <= 10) return 0.6;
     if (level <= 20) return 0.4;
