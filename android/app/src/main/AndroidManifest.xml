@@ -2,12 +2,19 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.ucv.tictactoe_game">
 
-    <!-- Let Android know we query WhatsApp -->
+    <!-- Package visibility queries so the app can detect/launch WhatsApp and web handlers on Android 11+ -->
     <queries>
-        <package android:name="com.whatsapp" />
+    <!-- WhatsApp (consumer + business) -->
+    <package android:name="com.whatsapp" />
+    <package android:name="com.whatsapp.w4b" />
+        <!-- Allow checking for web browsers to open wa.me fallback -->
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT" />
-            <data android:mimeType="text/plain" />
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 

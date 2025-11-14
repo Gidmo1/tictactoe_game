@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 
 class InviteService {
@@ -25,48 +23,8 @@ class InviteService {
     return '$_scheme://$_host?matchId=$matchId';
   }
 
-  // Fallback web link (used for WhatsApp or if app isn't installed)
-  String createWebFallbackLink(String matchId) {
-    return 'https://mytictactoe.example.app/join?matchId=$matchId';
-  }
-
-  // Share link via WhatsApp
-  Future<void> shareViaWhatsApp(BuildContext context, String matchId) async {
-    // Use web fallback for WhatsApp sharing
-    final webFallback = createWebFallbackLink(matchId);
-
-    // WhatsApp only highlights clickable HTTP/HTTPS URLs
-    final encodedMessage = Uri.encodeComponent(
-      'Join my TicTacToe game, who do you think will win? Tap the link to join: $webFallback',
-    );
-
-    final whatsappUrl = Uri.parse('https://wa.me/?text=$encodedMessage');
-
-    try {
-      final launched = await launchUrl(
-        whatsappUrl,
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!launched) throw Exception('WhatsApp not available');
-    } catch (e) {
-      // Fallback: copy link to clipboard
-      await Clipboard.setData(ClipboardData(text: webFallback));
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'WhatsApp not installed — invite link copied!',
-              style: TextStyle(color: Colors.white),
-            ),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-      debugPrint('WhatsApp share failed: $e');
-    }
-  }
+  // Note: WhatsApp-specific sharing was removed. Invites are created and
+  // consumed in-app using the Friend Invite screen or deep links.
 
   // Listen for incoming deep links while app is open
   static void listenForInvites(void Function(String matchId) onInviteReceived) {

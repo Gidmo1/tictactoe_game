@@ -22,7 +22,8 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
     markSprite?.removeFromParent();
     final spritePath = symbol == 'X' ? 'X.png' : 'O.png';
     markSprite = SpriteComponent()
-      ..sprite = await Sprite.load(spritePath)
+      ..sprite =
+          await (findGame()?.loadSprite(spritePath) ?? Sprite.load(spritePath))
       ..size = Vector2(70, 70)
       ..anchor = Anchor.center
       ..position = size / 2;
@@ -57,7 +58,9 @@ class TicTacToeBoard extends Component {
 
     // Background
     final background = SpriteComponent()
-      ..sprite = await Sprite.load('playscreen.png')
+      ..sprite =
+          await (findGame()?.loadSprite('playscreen.png') ??
+              Sprite.load('playscreen.png'))
       ..size = canvasSize
       ..position = Vector2.zero();
     add(background);
@@ -65,7 +68,9 @@ class TicTacToeBoard extends Component {
     // Player profile image
     try {
       final profile = SpriteComponent()
-        ..sprite = await Sprite.load('profile.png')
+        ..sprite =
+            await (findGame()?.loadSprite('profile.png') ??
+                Sprite.load('profile.png'))
         ..size = Vector2(56, 56)
         ..position = Vector2(20, 40)
         ..anchor = Anchor.topLeft;
@@ -334,7 +339,7 @@ class TicTacToeBoard extends Component {
     // Start spawning
     spawnConfettiPiece();
 
-    // Stop after 2 and half seconds
+    // Stop after 2 and half seconds.
     Future.delayed(const Duration(milliseconds: 2500), () {
       confettiRunning = false;
       print(
@@ -357,7 +362,8 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
 
   @override
   Future<void> onLoad() async {
-    sprite = await Sprite.load(imagePath);
+    sprite =
+        await (findGame()?.loadSprite(imagePath) ?? Sprite.load(imagePath));
   }
 
   @override

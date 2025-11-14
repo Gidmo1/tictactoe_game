@@ -178,9 +178,7 @@ class CompetitionService {
               return;
             }
 
-            // If REST fallback returned 401, try to reload the user and retry
-            // once. This helps when the native SDK hasn't propogated a fresh
-            // token yet.
+            // If REST fallback returned 401, reload user and retry once.
             if (resp.statusCode == 401) {
               debugPrint(
                 'joinTournament REST returned 401; attempting user.reload() and retry',
@@ -367,8 +365,8 @@ class CompetitionService {
     }
   }
 
-  // Sends a WhatsApp notification when weekly results are finalized
-  Future<void> sendWeeklyWhatsAppUpdate(String weekId) async {
+  // The function now only composes the message for logging or later delivery.
+  Future<void> sendWeeklyUpdate(String weekId) async {
     try {
       final entries = await getAllEntries(weekId);
       if (entries.isEmpty) return;
@@ -386,9 +384,9 @@ class CompetitionService {
         )
         ..writeln('')
         ..writeln('Keep up the good work for next week\'s leaderboard.');
-      debugPrint('WhatsApp update would be sent:\n$message');
+      debugPrint('Weekly results update:\n$message');
     } catch (e) {
-      debugPrint('Error sending WhatsApp update: $e');
+      debugPrint('Error preparing weekly update: $e');
     }
   }
 }

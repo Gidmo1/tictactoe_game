@@ -2,8 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:tictactoe_game/tictactoe.dart';
 import '../service/invite_service.dart';
 
-// Handles deep links and app navigation when an invite is received
-// This class connects my game logic with the invite/deep link system
 class LinkHandler {
   static TicTacToeGame? _gameInstance;
   static bool _isInitialized = false;
@@ -15,7 +13,7 @@ class LinkHandler {
     _isInitialized = true;
     _gameInstance = game;
 
-    // forstly, Handle cold-start (app launched via deep link)
+    //firstly, app launched via deep link
     try {
       final initialMatchId = await InviteService.getInitialInvite();
       if (initialMatchId != null) {
@@ -26,7 +24,7 @@ class LinkHandler {
       debugPrint(' Error during cold-start link handling: $e');
     }
 
-    // secondly, Listen for incoming deep links (while app is open)
+    // secondly, Listen for incoming deep links
     InviteService.listenForInvites((String matchId) {
       debugPrint(' Deep link received while app is running: $matchId');
       _navigateToMatch(matchId, isCreator: false);
@@ -40,10 +38,10 @@ class LinkHandler {
     _gameInstance = null;
   }
 
-  /// Navigate the user to the match inside the game
+  // Navigate the player to the match inside the game
   static void _navigateToMatch(String matchId, {required bool isCreator}) {
     if (_gameInstance == null) {
-      debugPrint(' Game instance not set — cannot navigate to match.');
+      debugPrint(' Game instance not set, cannot navigate to match.');
       return;
     }
 

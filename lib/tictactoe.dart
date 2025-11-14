@@ -8,20 +8,24 @@ import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/privacy_options_screen.dart';
 import 'package:tictactoe_game/profile_screen.dart';
 import 'package:tictactoe_game/settings_screen.dart';
-import 'package:tictactoe_game/vs_ai_board.dart';
 import 'firebase.dart';
 import 'board.dart';
 import 'competition_screen.dart';
+import 'service/score_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'models/user.dart' as app_user;
 import 'service/invite_service.dart';
+import 'friend_invite_screen.dart';
 import 'invite_match_screen.dart';
+import 'invite_options_screen.dart';
+import 'generate_code_screen.dart';
+import 'join_match_screen.dart';
 import 'link_handler.dart';
+import 'service/auth_service.dart';
 import 'tournament_match_screen.dart';
+import 'vs_ai_board.dart';
 
-// Lightweight router that runs a callback when routes change.
 class ObservingRouter extends RouterComponent {
   final void Function(String routeName)? onRouteChanged;
 
@@ -49,6 +53,9 @@ class TicTacToeGame extends FlameGame
     with HasKeyboardHandlerComponents, TapCallbacks {
   String? pendingMatchId;
   bool pendingMatchIsTournament = false;
+  // Nullable fields for server-created AI matches.
+  String? activeAIMatchTournamentId;
+  int? activeAIMatchDifficulty;
   late final RouterComponent router;
   String lastMessage = '';
   String loggedInUser = '';
@@ -95,7 +102,52 @@ class TicTacToeGame extends FlameGame
 
   void handleRouteChange(String routeName) {
     currentRoute = routeName;
+    // Remove transient overlays on route change to avoid leftover dialogs.
+    // Debug-log routing changes to help diagnose overlay/black-screen issues.
+    try {
+      debugPrint(
+        'handleRouteChange: route=$routeName pendingMatchId=$pendingMatchId myPlayerSymbol=${myPlayerSymbol ?? 'null'}',
+      );
+    } catch (_) {}
+    try {
+      overlays.remove('code_input');
+      overlays.remove('message');
+      overlays.remove('confirmation');
+    } catch (_) {}
     _handleMusicForRoute(routeName);
+    // If navigating to invite with a pending match, add the lobby once invite UI is ready.
+    if (routeName == 'invite' &&
+        pendingMatchId != null &&
+        !pendingMatchIsTournament) {
+      // Poll for Invite screen and add FriendLobbyComponent when ready.
+      Future<void> tryAddLobby(int retries) async {
+        final hasInvite =
+            (router.children.whereType<FriendInviteScreen>().isNotEmpty ||
+            router.children.whereType<FriendInviteComponent>().isNotEmpty ||
+            // fallback: in case invite was added directly to the game
+            children.whereType<FriendInviteScreen>().isNotEmpty ||
+            children.whereType<FriendInviteComponent>().isNotEmpty);
+        if (hasInvite) {
+          children.whereType<FriendLobbyComponent>().forEach(
+            (c) => c.removeFromParent(),
+          );
+          add(FriendLobbyComponent(matchId: pendingMatchId!));
+          return;
+        }
+        if (retries <= 0) {
+          // timed out — add lobby anyway to avoid leaving user waiting
+          children.whereType<FriendLobbyComponent>().forEach(
+            (c) => c.removeFromParent(),
+          );
+          add(FriendLobbyComponent(matchId: pendingMatchId!));
+          return;
+        }
+        await Future.delayed(const Duration(milliseconds: 60));
+        return tryAddLobby(retries - 1);
+      }
+
+      tryAddLobby(10);
+    }
     debugPrint(
       'handleRouteChange: route=$routeName pendingTournamentAutoSearch=$pendingTournamentAutoSearch ts=${DateTime.now().toIso8601String()}',
     );
@@ -128,6 +180,23 @@ class TicTacToeGame extends FlameGame
     }
   }
 
+  // Allow external callers to set invite input on the active FriendInviteComponent.
+  void setInviteInput(String txt) {
+    final comps = <FriendInviteComponent>[];
+    comps.addAll(children.whereType<FriendInviteComponent>());
+    // also check router children for route-wrapped invite screen
+    for (final c in router.children) {
+      if (c is FriendInviteScreen) {
+        comps.addAll(c.children.whereType<FriendInviteComponent>());
+      }
+    }
+    for (final comp in comps) {
+      try {
+        comp.input = txt;
+      } catch (_) {}
+    }
+  }
+
   // Open a specific match
   void openMatchWithId(String matchId, {bool isCreator = true}) {
     pendingMatchId = matchId;
@@ -137,11 +206,15 @@ class TicTacToeGame extends FlameGame
     // stop menu music as soon as we leave menu
     _stopMenuMusic();
 
-    if (router.children.isNotEmpty) {
-      if (router.canPop()) router.pop();
-    }
+    // Ensure we're on the invite route before showing the lobby so the
+    // dialog appears on the invite screen rather than over the home/menu.
+    try {
+      if (currentRoute != 'invite') {
+        router.pushReplacementNamed('invite');
+      }
+    } catch (_) {}
 
-    router.pushNamed('invite');
+    // Defer adding FriendLobbyComponent until invite route is active.
   }
 
   // Join a match directly
@@ -152,14 +225,61 @@ class TicTacToeGame extends FlameGame
     myPlayerSymbol = 'O';
 
     _stopMenuMusic();
-    router.pushNamed('invite');
+    // Defer adding FriendLobbyComponent until invite route is active.
   }
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    // Competition screen manages its own loading UI to avoid black screens.
     await Firebaseinit().initFirebase();
+    // Ensure we have an authenticated user for Firestore rules that
+    // require auth. Prefer existing sign-in; otherwise try anonymous.
+    try {
+      final fbUser = FirebaseAuth.instance.currentUser;
+      if (fbUser == null) {
+        debugPrint('No Firebase user, attempting anonymous sign-in');
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+          debugPrint(
+            'Anonymous sign-in succeeded: ${FirebaseAuth.instance.currentUser?.uid}',
+          );
+        } catch (e) {
+          debugPrint('Anonymous sign-in failed: $e');
+        }
+      } else {
+        debugPrint('Already signed in uid=${fbUser.uid}');
+      }
+    } catch (e) {
+      debugPrint('Error checking/signing Firebase user: $e');
+    }
+    try {
+      final current = FirebaseAuth.instance.currentUser;
+      if (current == null) {
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+          debugPrint('Signed in anonymously for Firestore access');
+        } catch (e) {
+          debugPrint('Anonymous sign-in failed: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Auth check failed: $e');
+    }
     await LinkHandler.initialize(this);
+
+    // Upload locally cached guest scores to server (best-effort).
+    try {
+      await ScoreService().uploadAllGuestCaches();
+    } catch (e) {
+      debugPrint('Failed to upload cached guest scores at startup: $e');
+    }
+
+    // Auth helper for flame so that sign in flow will work well
+    try {
+      // Attach an instance that exposes signInWithFacebook.
+      (this as dynamic).authHelper = AuthHelper();
+    } catch (_) {}
 
     // Listen for invites
     InviteService.listenForInvites((matchId) {
@@ -184,30 +304,17 @@ class TicTacToeGame extends FlameGame
         'menu': Route(() => MainMenuScreen()),
         'invite': Route(() {
           if (pendingMatchId == null || myPlayerSymbol == null) {
-            return MainMenuScreen();
+            return FriendInviteScreen();
           }
           return TicTacToeInviteScreen(matchId: pendingMatchId!);
         }),
+        'invite_options': Route(() => InviteOptionsScreen()),
+        'invite_generate': Route(() => GenerateCodeScreen()),
+        'invite_join': Route(() => JoinMatchScreen()),
         'profile': Route(() => ProfileScreen()),
         'tictactoe': Route(() => TicTacToeBoard()),
         'settings': Route(() => SettingsScreen()),
-        'vsai': Route(() {
-          final fbUser = FirebaseAuth.instance.currentUser;
-          if (fbUser == null) return TicTacToeVsAI();
-
-          final user = app_user.User(
-            id: fbUser.uid,
-            userName: fbUser.displayName ?? "Anonymous",
-            providerId: fbUser.providerData.isNotEmpty
-                ? fbUser.providerData[0].providerId
-                : "firebase",
-            providerName: fbUser.providerData.isNotEmpty
-                ? fbUser.providerData[0].providerId
-                : "firebase",
-          );
-
-          return TicTacToeVsAI(loggedInUser: user);
-        }),
+        'vsai': Route(() => TicTacToeVsAI()),
         'competition': Route(() => CompetitionScreen()),
         'privacy': Route(() => PrivacyOptionsScreen()),
         'tournament': Route(() => TournamentMatchScreen()),
@@ -220,11 +327,11 @@ class TicTacToeGame extends FlameGame
     // preload common assets that the Competition screen and matchmaking UI
     try {
       await images.load('leaderboard_background.png');
+      await images.load('playscreen.png');
       await images.load('loading.png');
       await images.load('background.png');
       await images.load('retry.png');
-      await images.load('cancel.png');
-      // Record a prefs flag indicating preload succeeded (informational).
+      // Record a prefs flag indicating preload succeeded
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('assets_preloaded_v1', true);
@@ -316,14 +423,14 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     );
 
     // Play buttons
-    final playSprite = await game.loadSprite('play.png');
+    /*final playSprite = await game.loadSprite('play.png');
     add(
       _PressdownButton(
         sprite: playSprite,
         position: game.size / 2 + Vector2(0, -70),
         onPressed: () => game.router.pushNamed('tictactoe'),
       ),
-    );
+    );*/
 
     final vsFriendSprite = await game.loadSprite('vsfriend.png');
     add(
@@ -331,33 +438,31 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
         sprite: vsFriendSprite,
         position: game.size / 2,
         onPressed: () async {
-          final matchId = 'match_${DateTime.now().millisecondsSinceEpoch}';
-          final playerName =
-              FirebaseAuth.instance.currentUser?.displayName ?? "Player";
-
-          await InviteService().createInviteLink(playerName);
-          await InviteService().shareViaWhatsApp(game.buildContext!, matchId);
-
-          ScaffoldMessenger.of(game.buildContext!).showSnackBar(
-            const SnackBar(
-              content: Text("Invite sent! Waiting for your friend..."),
-              duration: Duration(seconds: 2),
-            ),
-          );
-
+          // Navigate to the invite options screen
           final g = game;
-          g.openMatchWithId(matchId, isCreator: true);
+          try {
+            g.overlays.remove('code_input');
+            g.overlays.remove('message');
+          } catch (_) {}
+          g.router.pushNamed('invite_options');
         },
       ),
     );
 
+    // vsComputer/vsAI button (offline/local AI). Restored so users can
+    // directly play against the local bot from the main menu.
     final vsComputerSprite = await game.loadSprite('vscomputer.png');
     add(
       _PressdownButton(
         sprite: vsComputerSprite,
-        position: game.size / 2 + Vector2(0, 70),
-        onPressed: () {
+        position: game.size / 2 + Vector2(0, 85),
+        onPressed: () async {
+          // Clear transient overlays and navigate to local VS-AI screen
           final g = game;
+          try {
+            g.overlays.remove('code_input');
+            g.overlays.remove('message');
+          } catch (_) {}
           g.router.pushNamed('vsai');
         },
       ),
@@ -367,7 +472,7 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     add(
       _PressdownButton(
         sprite: competitionSprite,
-        position: game.size / 2 + Vector2(0, 140),
+        position: game.size / 2 + Vector2(0, 170),
         onPressed: () async {
           // Allow guests to enter the Competition screen without forcing sign-in.
           // Guest join/sign-in flow is handled inside the CompetitionScreen.
@@ -410,7 +515,7 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
     Vector2? size,
   }) : super(
          sprite: sprite,
-         size: size ?? Vector2(200, 60),
+         size: size ?? Vector2(270, 70),
          position: position,
          anchor: Anchor.center,
        );

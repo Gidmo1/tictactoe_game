@@ -1,7 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
+// dart:convert not required here
 import 'dart:math';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
@@ -13,11 +12,15 @@ import 'package:tictactoe_game/end_match_overlay.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'ai.dart';
 import 'models/user.dart' as app_user;
+import 'service/guest_service.dart';
+import 'service/score_service.dart';
+import 'models/score.dart';
 
 class TicTacToeVsAI extends Component {
-  final String humanPlayer = 'X';
-  final String aiPlayer = 'O';
+  String humanPlayer = 'X';
+  String aiPlayer = 'O';
   String currentPlayer = 'X';
+  bool humanIsX = true;
   bool gameOver = false;
 
   final double cellWidth = 390 / 3;
@@ -36,6 +39,9 @@ class TicTacToeVsAI extends Component {
   bool confettiRunning = false;
   final Random random = Random();
   final List<Component> confettiPieces = [];
+  // Tunable AI delays (ms): aiReactionDelayMs and aiStartDelayMs.
+  int aiReactionDelayMs = 500;
+  int aiStartDelayMs = 0;
 
   List<List<String>> board = List.generate(3, (_) => List.filled(3, ''));
 
@@ -54,32 +60,38 @@ class TicTacToeVsAI extends Component {
     ai = TicTacToeAI();
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
 
+    // Load AI difficulty from local prefs
     try {
-      // Background
+      final prefs = await SharedPreferences.getInstance();
+      currentLevel = prefs.getInt('ai_level') ?? 1;
+      if (currentLevel < 1) currentLevel = 1;
+      // Load tuned delays if present. Keep sensible defaults otherwise.
+      aiReactionDelayMs =
+          prefs.getInt('ai_reaction_delay_ms') ?? aiReactionDelayMs;
+      aiStartDelayMs = prefs.getInt('ai_start_delay_ms') ?? aiStartDelayMs;
+    } catch (_) {
+      currentLevel = 1;
+    }
+
+    // Load background and UI
+    try {
       final background = SpriteComponent()
-        ..sprite = await Sprite.load('playscreen.png')
+        ..sprite =
+            await (findGame()?.loadSprite('playscreen.png') ??
+                Sprite.load('playscreen.png'))
         ..size = canvasSize
         ..position = Vector2.zero();
       add(background);
 
-      // Player icons
       final iconSize = 40.0;
       humanIcon = SpriteComponent()
-        ..sprite = await Sprite.load('X.png')
         ..size = Vector2(iconSize, iconSize)
         ..position = Vector2(60, 50);
       add(humanIcon);
-
       aiIcon = SpriteComponent()
-        ..sprite = await Sprite.load('O.png')
         ..size = Vector2(iconSize, iconSize)
         ..position = Vector2(canvasSize.x - 100, 50);
       add(aiIcon);
-
-      // Load and display level
-      final prefs = await SharedPreferences.getInstance();
-      currentLevel = prefs.getInt('ai_level') ?? 1;
-      if (currentLevel < 1) currentLevel = 1;
 
       levelText = TextComponent(
         text: 'Level $currentLevel',
@@ -98,7 +110,6 @@ class TicTacToeVsAI extends Component {
       );
       add(levelText);
 
-      // Empty score text (no scoring system)
       scoreText = TextComponent(
         text: "",
         position: Vector2(canvasSize.x / 2, 60),
@@ -128,9 +139,34 @@ class TicTacToeVsAI extends Component {
       );
     }
 
+    // Apply symbol settings (loads correct sprites and ensures X starts)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      humanIsX = prefs.getBool('human_is_x') ?? true;
+    } catch (_) {
+      humanIsX = true;
+    }
+    await applySymbolSettings();
+
+    // Settings button
+    add(
+      _PressdownButton(
+        imagePath: 'settings.png',
+        position: Vector2(340, 760),
+        size: Vector2(40, 40),
+        onPressed: () {
+          final flameGame = findGame();
+          if (flameGame != null) {
+            final router = (flameGame as dynamic).router;
+            router?.pushNamed('settings');
+          }
+        },
+      ),
+    );
+
     // Return button
     add(
-      _PressdownIconButton(
+      _PressdownButton(
         imagePath: 'return.png',
         position: Vector2(40, 180),
         size: Vector2(60, 60),
@@ -147,11 +183,15 @@ class TicTacToeVsAI extends Component {
 
           late ConfirmationOverlay overlay;
           overlay = ConfirmationOverlay(
-            onYes: () async {
+            onYes: () {
+              // close overlay first
               overlay.removeFromParent();
               dim.removeFromParent();
 
-              if (!gameOver) await saveScore("loss");
+              // save score in background so UI stays snappy
+              if (!gameOver) {
+                saveScore("loss");
+              }
               restartBoard();
 
               final router = (flameGame as dynamic).router;
@@ -191,14 +231,23 @@ class TicTacToeVsAI extends Component {
     if (board[row][col] != '') return;
 
     makeMove(row, col, humanPlayer);
+    // Use a tunable reaction delay so different devices can adjust AI responsiveness.
     if (!gameOver) {
-      Future.delayed(const Duration(milliseconds: 500), aiMove);
+      if (aiReactionDelayMs <= 0) {
+        // immediate (next microtask) to avoid blocking UI
+        Future.microtask(() {
+          try {
+            aiMove();
+          } catch (_) {}
+        });
+      } else {
+        Future.delayed(Duration(milliseconds: aiReactionDelayMs), aiMove);
+      }
     }
   }
 
   void makeMove(int row, int col, String player) {
     board[row][col] = player;
-
     final cell = children.whereType<TicTacToeCell>().firstWhere(
       (c) => c.row == row && c.col == col,
     );
@@ -213,7 +262,7 @@ class TicTacToeVsAI extends Component {
 
   void aiMove() {
     if (gameOver) return;
-    final move = ai.getMoveForLevel(board, 15, aiPlayer, humanPlayer);
+    final move = ai.getMoveForLevel(board, currentLevel, aiPlayer, humanPlayer);
     if (move[0] != -1) makeMove(move[0], move[1], aiPlayer);
   }
 
@@ -244,15 +293,39 @@ class TicTacToeVsAI extends Component {
         final overlay = EndMatchOverlay(
           didWin: result == "win",
           didDraw: result == "draw",
+          showSignInPrompt: false,
           onNext: () async {
-            // Always increase level
             currentLevel++;
             levelText.text = 'Level $currentLevel';
             final prefs = await SharedPreferences.getInstance();
             await prefs.setInt('ai_level', currentLevel);
 
+            // Rotate symbols: flip whether the human is X or O for next level
+            humanIsX = !humanIsX;
+            await prefs.setBool('human_is_x', humanIsX);
+            await applySymbolSettings();
+
             dim.removeFromParent();
             restartBoard();
+
+            // If AI should start, schedule its move after aiStartDelayMs (0 => immediate).
+            try {
+              if (currentPlayer == aiPlayer && !gameOver) {
+                if (aiStartDelayMs <= 0) {
+                  Future.microtask(() {
+                    try {
+                      aiMove();
+                    } catch (_) {}
+                  });
+                } else {
+                  Future.delayed(Duration(milliseconds: aiStartDelayMs), () {
+                    try {
+                      aiMove();
+                    } catch (_) {}
+                  });
+                }
+              }
+            } catch (_) {}
           },
           onHome: () {
             dim.removeFromParent();
@@ -271,6 +344,8 @@ class TicTacToeVsAI extends Component {
   void restartBoard() {
     board = List.generate(3, (_) => List.filled(3, ''));
     gameOver = false;
+    // Human should always start. Set current player to the human player's symbol
+    // so that symbols can rotate but the human always gets the first move.
     currentPlayer = humanPlayer;
 
     for (var cell in children.whereType<TicTacToeCell>()) {
@@ -412,25 +487,54 @@ class TicTacToeVsAI extends Component {
   }
 
   Future<void> saveScore(String result) async {
-    if (loggedInUser.id.isEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('guest_score', json.encode({'result': result}));
-      return;
+    // Build Score object and save via ScoreService (server call or local fallback).
+    String playerId = loggedInUser.id;
+    bool loggedIn = playerId.isNotEmpty;
+    if (!loggedIn) {
+      playerId = await GuestService.getOrCreateGuestId();
     }
-    final data = {
-      'playerId': loggedInUser.id,
-      'result': result,
-      'mode': 'vs_ai',
-      'timestamp': DateTime.now().toIso8601String(),
-    };
+
+    final score = Score(
+      playerId: playerId,
+      playerName: loggedInUser.userName.isNotEmpty
+          ? loggedInUser.userName
+          : 'Guest',
+      wins: (result == 'win') ? 1 : 0,
+      draws: (result == 'draw') ? 1 : 0,
+      losses: (result == 'loss') ? 1 : 0,
+      points: (result == 'win')
+          ? 3
+          : (result == 'draw')
+          ? 1
+          : 0,
+    );
+
     try {
-      final callable = FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('updateScore');
-      await callable.call(data);
+      await ScoreService().saveScore(score, loggedIn: loggedIn);
     } catch (e) {
-      print("Error saving score to Firebase: $e");
+      // ScoreService already falls back to local persistence on failures,
+      // but log any unexpected errors for diagnostics.
+      print('Failed to save score: $e');
     }
+  }
+
+  Future<void> applySymbolSettings() async {
+    humanPlayer = humanIsX ? 'X' : 'O';
+    aiPlayer = humanIsX ? 'O' : 'X';
+    // Load appropriate sprites for the icons (safe to call multiple times)
+    try {
+      humanIcon.sprite =
+          await (findGame()?.loadSprite(
+                humanPlayer == 'X' ? 'X.png' : 'O.png',
+              ) ??
+              Sprite.load(humanPlayer == 'X' ? 'X.png' : 'O.png'));
+      aiIcon.sprite =
+          await (findGame()?.loadSprite(aiPlayer == 'X' ? 'X.png' : 'O.png') ??
+              Sprite.load(aiPlayer == 'X' ? 'X.png' : 'O.png'));
+    } catch (_) {}
+    // Ensure the human always starts. This keeps symbol rotation (humanIsX)
+    // but guarantees the human is the first to move each round.
+    currentPlayer = humanPlayer;
   }
 }
 
@@ -458,7 +562,9 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
   void mark(String player) async {
     markSprite?.removeFromParent();
     markSprite = SpriteComponent(
-      sprite: await Sprite.load(player == 'X' ? 'X.png' : 'O.png'),
+      sprite:
+          await (findGame()?.loadSprite(player == 'X' ? 'X.png' : 'O.png') ??
+              Sprite.load(player == 'X' ? 'X.png' : 'O.png')),
       size: Vector2(70, 70),
       anchor: Anchor.center,
       position: size / 2,
@@ -467,10 +573,10 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
   }
 }
 
-class _PressdownIconButton extends SpriteComponent with TapCallbacks {
+class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String imagePath;
-  _PressdownIconButton({
+  _PressdownButton({
     required this.imagePath,
     required Vector2 position,
     required Vector2 size,
@@ -478,7 +584,8 @@ class _PressdownIconButton extends SpriteComponent with TapCallbacks {
   }) : super(size: size, position: position, anchor: Anchor.center);
 
   @override
-  Future<void> onLoad() async => sprite = await Sprite.load(imagePath);
+  Future<void> onLoad() async => sprite =
+      await (findGame()?.loadSprite(imagePath) ?? Sprite.load(imagePath));
 
   @override
   void onTapDown(TapDownEvent event) {

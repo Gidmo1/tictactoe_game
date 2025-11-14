@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
@@ -11,15 +12,15 @@ class TournamentMatchScreen extends Component {
   TextComponent? statusText;
   bool _isSearching = false;
   bool _isRemoved = false;
+  TextComponent? detailText;
+  int _attempts = 0;
+  String _lastError = '';
 
   @override
   Future<void> onLoad() async {
     final canvasSize = findGame()?.size ?? Vector2(360, 640);
 
-    // Detect auto-search request coming from Competition screen. It may be
-    // set on the FlameGame instance (in-memory) or persisted briefly in
-    // SharedPreferences ('pendingTournamentAutoSearch'). We clear the
-    // persisted flag immediately after reading it.
+    // Handle Competition to Tournament auto-search flag
     final flameGame = findGame();
     final bool inMemoryAuto =
         flameGame != null &&
@@ -43,20 +44,19 @@ class TournamentMatchScreen extends Component {
 
     // Background
     final background = SpriteComponent()
-      ..sprite = await Sprite.load('background.png')
+      ..sprite =
+          await (findGame()?.loadSprite('background.png') ??
+              Sprite.load('background.png'))
       ..size = canvasSize
       ..position = Vector2.zero();
     add(background);
 
-    // If autoSearch was requested we intentionally do not add any
-    // return/play/cancel controls — the screen is locked into a
-    // searching state until matched or the user leaves this screen.
-
+    // If autoSearch requested, the screen stays in searching state until matched or exit.
     // Status text
     statusText = TextComponent(
       text: autoSearch
-          ? 'Searching for another player...'
-          : 'Searching for another player...',
+          ? 'Waiting for player to join...'
+          : 'Waiting for player to join...',
       position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
       anchor: Anchor.center,
       textRenderer: TextPaint(
@@ -65,9 +65,21 @@ class TournamentMatchScreen extends Component {
     );
     add(statusText!);
 
+    // Small detail text for debug or info
+    detailText = TextComponent(
+      text: '',
+      position: Vector2(canvasSize.x / 2, canvasSize.y / 2 + 32),
+      anchor: Anchor.center,
+      textRenderer: TextPaint(
+        style: const TextStyle(color: Colors.white70, fontSize: 12),
+      ),
+    );
+    add(detailText!);
+
     // If autoSearch requested, begin matchmaking when UI is ready.
     if (autoSearch) {
       Future.microtask(() => _startMatchmakingLocked());
+      // Force-bot UI removed; AI fallback disabled for matchmaking.
     }
 
     return Future.value();
@@ -94,8 +106,14 @@ class TournamentMatchScreen extends Component {
     final tournamentId = svc.getCurrentWeekId();
 
     try {
+      // Randomized fallback threshold for AI matchmaking (5–6s).
+      final fallbackSeconds = 5 + Random().nextInt(2); // 5..6 seconds
+      final startTime = DateTime.now();
+
       while (_isSearching && !_isRemoved) {
+        _attempts++;
         try {
+          detailText?.text = '';
           final data = await svc.matchmakeForTournament(
             weekId: tournamentId,
             userId: userId,
@@ -107,7 +125,19 @@ class TournamentMatchScreen extends Component {
 
           if (status == 'waiting' || status == 'already_in_queue') {
             statusText?.text = 'Waiting for an opponent...';
-            await Future.delayed(const Duration(seconds: 2));
+
+            // Wait briefly and check elapsed time before considering fallback.
+            await Future.delayed(const Duration(seconds: 1));
+            final elapsed = DateTime.now().difference(startTime).inSeconds;
+
+            if (elapsed >= fallbackSeconds) {
+              // AI fallback disabled: continue searching for human opponents.
+              detailText?.text = 'Still searching for human opponents...';
+              // Small backoff before the next matchmaking attempt to avoid tight loop
+              await Future.delayed(const Duration(seconds: 1));
+              continue;
+            }
+
             continue;
           }
 
@@ -139,9 +169,19 @@ class TournamentMatchScreen extends Component {
           break;
         } catch (e) {
           if (!_isRemoved) {
+            _lastError = e.toString();
             statusText?.text = 'Matchmaking error. Retrying...';
-            debugPrint('Matchmaking error: $e');
+            /*detailText?.text =
+                'Attempts: $_attempts • Last error: ${_lastError.length > 120 ? _lastError.substring(0, 120) + '...' : _lastError}';
+            debugPrint('Matchmaking error: $e');*/
+            // Wait a little before retrying; if the randomized fallback
+            // time has elapsed, attempt the AI creation as a fallback.
             await Future.delayed(const Duration(seconds: 2));
+            final elapsed = DateTime.now().difference(startTime).inSeconds;
+            if (elapsed >= fallbackSeconds) {
+              // AI fallback disabled — do nothing special; continue retrying matchmaking.
+              await Future.delayed(const Duration(seconds: 1));
+            }
             continue;
           }
         }
@@ -149,6 +189,11 @@ class TournamentMatchScreen extends Component {
     } finally {
       _isSearching = false;
     }
+  }
+
+  // Public entry point to start locked matchmaking (used by route handler).
+  Future<void> startMatchmaking() async {
+    await _startMatchmakingLocked();
   }
 
   Future<void> _cancelMatchmaking() async {
@@ -163,7 +208,7 @@ class TournamentMatchScreen extends Component {
     try {
       await _leaveQueue(userId, tournamentId);
     } catch (e) {
-      debugPrint('Error while leaving queue: $e');
+      // debugPrint('Error while leaving queue: $e');
     }
   }
 
@@ -173,9 +218,9 @@ class TournamentMatchScreen extends Component {
         region: 'us-central1',
       ).httpsCallable('leaveTournamentQueue');
       await callable.call({'playerId': playerId, 'tournamentId': tournamentId});
-      debugPrint('Left tournament queue.');
+      // debugPrint('Left tournament queue.');
     } catch (e) {
-      debugPrint('Error leaving tournament queue: $e');
+      // debugPrint('Error leaving tournament queue: $e');
     }
   }
 }

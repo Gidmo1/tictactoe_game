@@ -1,5 +1,4 @@
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+// settings are stored locally only
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
@@ -12,7 +11,7 @@ class SettingsScreen extends Component
     with HasGameReference<TicTacToeGame>, TapCallbacks {
   static bool buttonSoundOn = true;
   static bool gameSoundOn = true;
-  String? playerId;
+  // no cloud sync; settings are local only
 
   // Sprites
   late Sprite toggleRightSprite;
@@ -97,7 +96,7 @@ class SettingsScreen extends Component
       _ReturnButton(
         sprite: returnSprite,
         position: Vector2(10, 50),
-        onPressed: () => game.router.pushReplacementNamed('tictactoe'),
+        onPressed: () => game.router.pushReplacementNamed('vsai'),
       ),
     );
 
@@ -147,33 +146,7 @@ class SettingsScreen extends Component
         ? toggleButton.rightSprite
         : toggleButton.leftSprite;
 
-    // Firestore sync in background
-    final user = FirebaseAuth.instance.currentUser;
-    playerId = user?.uid;
-    if (playerId != null) {
-      try {
-        final result = await FirebaseFunctions.instanceFor(
-          region: 'us-central1',
-        ).httpsCallable('getUserSettings').call({'playerId': playerId});
-        final data = result.data as Map<String, dynamic>? ?? {};
-        final cloudButton = data['buttonSoundOn'] ?? buttonSoundOn;
-        final cloudGame = data['gameSoundOn'] ?? gameSoundOn;
-        await prefs.setBool('buttonSoundOn', cloudButton);
-        await prefs.setBool('gameSoundOn', cloudGame);
-        // after syncing, ensure music state matches current route
-        try {
-          final g = game;
-          if (cloudGame &&
-              (g.currentRoute == 'menu' || g.currentRoute == 'profile')) {
-            g.playMenuMusic();
-          } else {
-            g.stopMenuMusic();
-          }
-        } catch (_) {}
-      } catch (e) {
-        debugPrint('Cloud load failed: $e');
-      }
-    }
+    // we only load from shared prefs to keep startup fast
   }
 
   Future<void> _saveSoundState() async {
@@ -181,19 +154,7 @@ class SettingsScreen extends Component
     await prefs.setBool('buttonSoundOn', buttonSoundOn);
     await prefs.setBool('gameSoundOn', gameSoundOn);
 
-    if (playerId != null) {
-      try {
-        await FirebaseFunctions.instanceFor(
-          region: 'us-central1',
-        ).httpsCallable('updateUserSettings').call({
-          'playerId': playerId,
-          'buttonSoundOn': buttonSoundOn,
-          'gameSoundOn': gameSoundOn,
-        });
-      } catch (e) {
-        debugPrint('Cloud save failed: $e');
-      }
-    }
+    // we no longer sync settings to the cloud
   }
 }
 

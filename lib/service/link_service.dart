@@ -13,29 +13,6 @@ class LinkService {
     return '$appScheme://$host?matchId=$matchId';
   }
 
-  // Generate a fallback web link
-  static String createWebFallbackLink(String matchId) {
-    return '$webDomain/join?matchId=$matchId';
-  }
-
-  // Send the invite link through WhatsApp or fallback to browser
-  static Future<void> sendInviteViaWhatsApp(String matchId) async {
-    final link = createInviteLink(matchId);
-    final text = Uri.encodeComponent('Hey! Join my TicTacToe game: $link');
-    final whatsappUrl = Uri.parse('https://wa.me/?text=$text');
-    final fallback = Uri.parse(createWebFallbackLink(matchId));
-
-    try {
-      if (await canLaunchUrl(whatsappUrl)) {
-        await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
-      } else {
-        await launchUrl(fallback, mode: LaunchMode.externalApplication);
-      }
-    } catch (e) {
-      debugPrint(' Could not send WhatsApp invite: $e');
-    }
-  }
-
   // Open a link directly
   static Future<void> openLink(String link) async {
     final uri = Uri.parse(link);

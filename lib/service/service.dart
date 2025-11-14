@@ -34,7 +34,7 @@ class ScoreService {
       .collection('scores');
 
   Future<void> updateScore(Score score) async {
-    // Use server callable to update scores.
+    // Use server callable to update scores
     try {
       final callable = FirebaseFunctions.instanceFor(
         region: 'us-central1',
@@ -45,7 +45,7 @@ class ScoreService {
       });
       return;
     } catch (e) {
-      // Do not write scores from the client; surface error so caller can retry.
+      // Do not write scores from the client: surface error so caller can retry.
       rethrow;
     }
   }

@@ -2,7 +2,6 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
-import 'package:flame/game.dart';
 import 'package:flame/palette.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -19,7 +18,6 @@ class AuthGateComponent extends PositionComponent
   late SpriteComponent _modal;
   late TextComponent _title;
   late _TapButton _fbButton;
-  late _TapButton _ttButton;
 
   AuthGateComponent({this.onSignedIn, this.nonDismissible = false});
 
@@ -35,16 +33,42 @@ class AuthGateComponent extends PositionComponent
     final modalH = game.size.y * 0.48;
     final modalCenter = Vector2(game.size.x / 2, game.size.y / 2);
 
-    final sprite = await game.loadSprite('confirmation_overlay.png');
+    final overlaySprite = await game.loadSprite('confirmation_overlay.png');
     _modal = SpriteComponent(
-      sprite: sprite,
+      sprite: overlaySprite,
       size: Vector2(modalW, modalH),
       anchor: Anchor.center,
     )..position = modalCenter;
-    add(_modal);
+
+    final bg = RectangleComponent(
+      size: Vector2(modalW, modalH),
+      position: modalCenter,
+      anchor: Anchor.center,
+      paint: Paint()..color = const Color.fromARGB(240, 18, 18, 18),
+    );
+    add(bg);
+
+    // Light drop shadow
+    add(
+      RectangleComponent(
+        size: Vector2(modalW + 6, modalH + 6),
+        position: modalCenter + Vector2(3, 4),
+        anchor: Anchor.center,
+        paint: Paint()..color = const Color.fromARGB(40, 0, 0, 0),
+      ),
+    );
+
+    // Accent sprite on top of the background
+    final spriteAccent = SpriteComponent(
+      sprite: overlaySprite,
+      size: Vector2(modalW * 0.92, modalH * 0.36),
+      position: modalCenter - Vector2(0, modalH / 2 - (modalH * 0.18) - 6),
+      anchor: Anchor.center,
+    );
+    add(spriteAccent);
 
     _title = TextComponent(
-      text: 'Sign in to so you won\'t lose your progress',
+      text: 'Sign in so you won\'t lose your progress',
       textRenderer: TextPaint(
         style: const material.TextStyle(
           color: material.Colors.white,
@@ -56,8 +80,8 @@ class AuthGateComponent extends PositionComponent
     _title.position = Vector2(modalCenter.x, modalCenter.y - modalH / 2 + 20);
     add(_title);
 
-    final btnW = modalW * 0.78;
-    final btnH = 48.0;
+    final btnW = modalW * 0.82;
+    final btnH = 56.0; // slightly larger buttons for better tap targets
     final gap = 12.0;
 
     _fbButton = _TapButton(
@@ -69,24 +93,22 @@ class AuthGateComponent extends PositionComponent
       onPressed: _onFacebookPressed,
     );
 
-    _ttButton = _TapButton(
-      size: Vector2(btnW, btnH),
-      position: modalCenter + Vector2(0, gap / 2),
-      paint: BasicPalette.black.paint(),
-      icon: FontAwesomeIcons.tiktok,
-      label: 'Continue with TikTok',
-      onPressed: _onTikTokPressed,
-    );
-
     add(_fbButton);
-    add(_ttButton);
 
     // entrance animation
-    _modal.scale = Vector2.all(0.6);
-    _modal.add(
+    // entrance animation for modal background and accent
+    bg.scale = Vector2.all(0.7);
+    bg.add(
       ScaleEffect.to(
         Vector2.all(1.0),
         EffectController(duration: 0.18, curve: material.Curves.easeOutBack),
+      ),
+    );
+    spriteAccent.scale = Vector2.all(0.7);
+    spriteAccent.add(
+      ScaleEffect.to(
+        Vector2.all(1.0),
+        EffectController(duration: 0.20, curve: material.Curves.easeOutBack),
       ),
     );
   }
@@ -117,18 +139,6 @@ class AuthGateComponent extends PositionComponent
         await helper.signInWithFacebook();
     } catch (e) {
       if (kDebugMode) print('AuthGate fb helper error: $e');
-    }
-    _close(notify: true);
-  }
-
-  Future<void> _onTikTokPressed() async {
-    _feedbackEffect(_ttButton);
-    try {
-      final helper = (game as dynamic).authHelper;
-      if (helper != null && helper.signInWithTikTok != null)
-        await helper.signInWithTikTok();
-    } catch (e) {
-      if (kDebugMode) print('AuthGate tiktok helper error: $e');
     }
     _close(notify: true);
   }

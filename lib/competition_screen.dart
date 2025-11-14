@@ -13,7 +13,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'models/competition.dart';
 
 // Buttons
-
 class _ReturnButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   _ReturnButton({
@@ -150,27 +149,12 @@ class LeaderboardCardComponent extends PositionComponent {
     await super.onLoad();
     add(RectangleComponent(size: size, paint: Paint()..color = cardColor));
 
-    if (medalColor != null && rank <= 3) {
-      final trophySize = 28.0;
-      add(
-        SpriteComponent(
-          sprite: await Sprite.load(
-            rank == 1
-                ? 'trophy_gold.png'
-                : rank == 2
-                ? 'trophy_silver.png'
-                : 'trophy_bronze.png',
-          ),
-          size: Vector2(trophySize, trophySize),
-          position: Vector2(16, size.y / 2 - trophySize / 2),
-        ),
-      );
-    }
-
+    // Rank / medal (for top 3 we attempt to show a trophy sprite)
+    final rankPos = Vector2(48, size.y / 2);
     add(
       TextComponent(
         text: '$rank',
-        position: Vector2(60, size.y / 2),
+        position: rankPos,
         anchor: Anchor.center,
         textRenderer: TextPaint(
           style: TextStyle(
@@ -182,6 +166,30 @@ class LeaderboardCardComponent extends PositionComponent {
       ),
     );
 
+    if (medalColor != null && rank <= 3) {
+      // Try to load a small trophy sprite for top ranks; non-fatal if missing.
+      final trophySize = 28.0;
+      final spriteName = rank == 1
+          ? 'trophy_gold.png'
+          : rank == 2
+          ? 'trophy_silver.png'
+          : 'trophy_bronze.png';
+      try {
+        final trophy = await Sprite.load(spriteName);
+        add(
+          SpriteComponent(
+            sprite: trophy,
+            size: Vector2(trophySize, trophySize),
+            position: Vector2(20, size.y / 2),
+            anchor: Anchor.center,
+          ),
+        );
+      } catch (_) {
+        // ignore missing sprite
+      }
+    }
+
+    // Avatar circle
     add(
       CircleComponent(
         radius: 20,
@@ -191,6 +199,7 @@ class LeaderboardCardComponent extends PositionComponent {
       ),
     );
 
+    // Player name
     add(
       TextComponent(
         text: name,
@@ -206,6 +215,7 @@ class LeaderboardCardComponent extends PositionComponent {
       ),
     );
 
+    // Score on the right
     add(
       TextComponent(
         text: '$score XP',
@@ -244,39 +254,119 @@ class _ScrollableLeaderboardContainer extends PositionComponent
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    _buildCards();
+    await _buildCards();
   }
 
-  void _buildCards() {
+  Future<void> _buildCards() async {
     removeAll(children);
     cardComponents.clear();
 
     List<Map<String, dynamic>> renderEntries = entries;
-    if (entries.isEmpty) {
-      renderEntries = List.generate(8, (i) {
-        final names = [
-          'Alex',
-          'Jordan',
-          'Sam',
-          'Gidmo',
-          'Chris',
-          'Morgan',
-          'Riley',
-          'Casey',
-          'Jamie',
-          'Dakota',
-          'Stephen',
-          'Daniel',
-          'Scott',
-        ];
-        return {'name': names[i % names.length], 'score': (10 - i) * 50};
-      });
+    // Fallback: populate a minimal local leaderboard when fewer than 8 entries.
+    if (entries.length < 8) {
+      final fb.User? user = fb.FirebaseAuth.instance.currentUser;
+      final String userName = user?.displayName ?? 'You';
+
+      final List<String> aiNames = [
+        'Astra',
+        'Boreal',
+        'Cirrus',
+        'Dynamo',
+        'Echo',
+        'Falco',
+        'GizmoBot',
+      ];
+
+      renderEntries = [];
+      // If server provided any entry for the current user, preserve their score
+      int userScore = 0;
+      try {
+        final uid = user?.uid ?? '';
+        if (uid.isNotEmpty) {
+          dynamic match;
+          try {
+            match = entries.firstWhere((e) => (e['playerId'] ?? '') == uid);
+          } catch (_) {
+            match = null;
+          }
+          if (match != null && match is Map && match.containsKey('score')) {
+            userScore = match['score'] ?? 0;
+          }
+        }
+      } catch (_) {}
+
+      // Support a local debug override for the user's displayed score (useful
+      // for testing). If set, respect that value instead of server score.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final enabled = prefs.getBool('debug_force_score_enabled') ?? false;
+        if (enabled) {
+          final forced = prefs.getInt('debug_force_score');
+          if (forced != null) userScore = forced;
+        }
+      } catch (_) {}
+
+      renderEntries.add({'name': userName, 'score': userScore});
+      for (int i = 0; i < aiNames.length; i++) {
+        renderEntries.add({'name': aiNames[i], 'score': (100 - i * 5)});
+      }
     }
 
-    for (int i = 0; i < renderEntries.length; i++) {
+    // Deduplicate entries by playerId (preferred) or by name to avoid repeating names
+    final Map<String, Map<String, dynamic>> uniqueById = {};
+    final Set<String> seenNames = {};
+    final List<Map<String, dynamic>> normalized = [];
+
+    for (final e in renderEntries) {
+      final id = (e['playerId'] ?? '') as String? ?? '';
+      final name = (e['name'] ?? '') as String? ?? '';
+      final score = (e['score'] ?? 0) as int;
+      if (id.isNotEmpty) {
+        final prev = uniqueById[id];
+        if (prev == null || (prev['score'] ?? 0) < score) {
+          uniqueById[id] = {'playerId': id, 'name': name, 'score': score};
+        }
+      } else {
+        // if no id, ensure we don't duplicate by name
+        if (!seenNames.contains(name)) {
+          seenNames.add(name);
+          normalized.add({'playerId': '', 'name': name, 'score': score});
+        }
+      }
+    }
+
+    // Combine id-based and name-based entries
+    normalized.addAll(uniqueById.values);
+
+    // Sort by score descending
+    normalized.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
+    // Replace placeholder names (e.g., 'player_') with friendly defaults.
+    final List<String> replacementAi = [
+      'Astra',
+      'Boreal',
+      'Cirrus',
+      'Dynamo',
+      'Echo',
+      'Falco',
+      'Gizmo',
+      'Helix',
+      'Ion',
+      'Juno',
+    ];
+    int replIdx = 0;
+
+    for (int i = 0; i < normalized.length; i++) {
       final rank = i + 1;
-      final name = renderEntries[i]['name'] ?? 'Player';
-      final score = renderEntries[i]['score'] ?? 0;
+      var name = normalized[i]['name'] ?? 'Player';
+      try {
+        final lower = name.toString().toLowerCase();
+        if (lower.startsWith('player') || lower.contains('nasj')) {
+          // replace with a friendly ai name
+          name = replacementAi[replIdx % replacementAi.length];
+          replIdx++;
+        }
+      } catch (_) {}
+      final score = normalized[i]['score'] ?? 0;
       final cardColor = rank <= 3
           ? const Color.fromARGB(255, 74, 104, 67)
           : const Color.fromARGB(255, 74, 104, 67);
@@ -341,11 +431,13 @@ class _ScrollableLeaderboardContainer extends PositionComponent
 }
 
 // COMPETITION SCREEN
-
 class CompetitionScreen extends Component with HasGameReference {
   List<Map<String, dynamic>> leaderboardEntries = [];
   late SpriteComponent loadingIndicator;
   final FirebaseFunctions functions = FirebaseFunctions.instance;
+  // When true, show a local dummy leaderboard immediately and skip network.
+  // Useful for fast local testing or when you want an instant UI.
+  bool forceDummyLeaderboard = true;
   bool confettiRunning = false;
   final Random _random = Random();
   final List<Component> _confettiPieces = [];
@@ -438,15 +530,44 @@ class CompetitionScreen extends Component with HasGameReference {
       ..position = Vector2.zero();
     add(bg);
 
-    loadingIndicator = SpriteComponent()
-      ..sprite = await game.loadSprite('loading.png')
-      ..size = Vector2(60, 60)
-      ..position = game.size / 2
-      ..anchor = Anchor.center;
-    add(loadingIndicator);
-    loadingIndicator.add(
-      RotateEffect.by(6.28, EffectController(duration: 1, infinite: true)),
-    );
+    // Load a spinner sprite; if this fails for any reason, fall back to a
+    // simple rotating rectangle so the UI always shows a loading indicator.
+    try {
+      final sprite = await game.loadSprite('loading.png');
+      loadingIndicator = SpriteComponent()
+        ..sprite = sprite
+        ..size = Vector2(60, 60)
+        ..position = game.size / 2
+        ..anchor = Anchor.center
+        ..priority = 1000;
+      add(loadingIndicator);
+      loadingIndicator.add(
+        RotateEffect.by(6.28, EffectController(duration: 1, infinite: true)),
+      );
+    } catch (e) {
+      // Fallback: rotating rectangle so we always have a visible spinner
+      loadingIndicator = SpriteComponent()
+        ..size = Vector2(60, 60)
+        ..position = game.size / 2
+        ..anchor = Anchor.center
+        ..priority = 1000;
+      final rect = RectangleComponent(
+        size: Vector2(28, 28),
+        position: Vector2.zero(),
+        anchor: Anchor.center,
+        paint: Paint()..color = Colors.white,
+      );
+      loadingIndicator.add(rect);
+      add(loadingIndicator);
+      loadingIndicator.add(
+        RotateEffect.by(6.28, EffectController(duration: 1, infinite: true)),
+      );
+      // Helpful debug log to surface load problems in the console.
+      // Use debugPrint to avoid noisy logs in production builds.
+      debugPrint(
+        'competition_screen: failed to load loading.png, using fallback spinner: $e',
+      );
+    }
 
     // Internet check
     bool online = true;
@@ -498,8 +619,8 @@ class CompetitionScreen extends Component with HasGameReference {
     // TOURNAMENT BUTTON
     final joinSprite = await game.loadSprite('joinatournament.png');
     final playSprite = await game.loadSprite('play.png');
-    final buttonWidth = 220.0;
-    final buttonHeight = 56.0;
+    final buttonWidth = 250.0;
+    final buttonHeight = 60.0;
     final bottomStartY = game.size.y - buttonHeight - 10;
     final fbUser = fb.FirebaseAuth.instance.currentUser;
     final svc = CompetitionService();
@@ -542,9 +663,7 @@ class CompetitionScreen extends Component with HasGameReference {
               final prefs = await SharedPreferences.getInstance();
 
               if (user == null) {
-                // Create or reuse a persistent guest id so the server can
-                // identify the player for the tournament. This id is stored
-                // locally only and prefixed with "guest_".
+                // Create/reuse a persistent guest id (stored locally).
                 String guestId = prefs.getString('guest_id') ?? '';
                 if (guestId.isEmpty) {
                   guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}';
@@ -565,9 +684,7 @@ class CompetitionScreen extends Component with HasGameReference {
                 // Mark joined locally so the UI reflects membership.
                 await prefs.setBool('joinedTournament_$weekId', true);
 
-                // Try to inform the server but don't block the UX if this
-                // fails (some backends may require auth). We swallow errors
-                // here so the new user can start matchmaking immediately.
+                // Best-effort: inform server of guest join; failures are non-blocking.
                 try {
                   final callable = FirebaseFunctions.instanceFor(
                     region: 'us-central1',
@@ -588,7 +705,7 @@ class CompetitionScreen extends Component with HasGameReference {
                 return;
               }
 
-              // Signed-in user path (unchanged)
+              // Signed-in user path
               final entry = CompetitionEntry(
                 userId: user.uid,
                 userName: user.displayName ?? 'Player',
@@ -604,9 +721,7 @@ class CompetitionScreen extends Component with HasGameReference {
               goToTournament();
             } catch (err) {
               debugPrint('Error while joining tournament: $err');
-              // Ensure the user still navigates to the tournament UI so
-              // they can start matchmaking locally; server sync can be
-              // retried later.
+              // Ensure navigation to tournament UI; server sync may be retried later.
               try {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.setBool('joinedTournament_$weekId', true);
@@ -627,6 +742,11 @@ class CompetitionScreen extends Component with HasGameReference {
             if (flameGame != null) {
               try {
                 (flameGame as dynamic).pendingTournamentAutoSearch = true;
+                // Persist the auto-search flag so TournamentMatchScreen sees it on load.
+                try {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('pendingTournamentAutoSearch', true);
+                } catch (_) {}
               } catch (_) {}
             }
             goToTournament();
@@ -684,13 +804,98 @@ class CompetitionScreen extends Component with HasGameReference {
   }
 
   Future<List<Map<String, dynamic>>> _fetchTopPlayers(int limit) async {
+    // Fast local mode: return a static dummy leaderboard immediately and
+    // skip any network calls. This is intentional for quick local testing.
+    if (forceDummyLeaderboard) {
+      final currentUid = fb.FirebaseAuth.instance.currentUser?.uid ?? '';
+      final names = [
+        'Alex',
+        'Chris',
+        'Jordan',
+        'Taylor',
+        'Sam',
+        'Riley',
+        'Morgan',
+        'Pat',
+      ];
+      final List<Map<String, dynamic>> dummy = List.generate(limit, (i) {
+        final score = (limit - i) * 100; // descending scores
+        return {
+          'playerId': 'dummy_$i',
+          'name': names[i % names.length],
+          'score': score,
+        };
+      });
+      if (currentUid.isNotEmpty) {
+        // Place the current user in the list as "You" (last slot)
+        final youIndex = (limit - 1).clamp(0, limit - 1);
+        dummy[youIndex] = {'playerId': currentUid, 'name': 'You', 'score': 0};
+      }
+      return dummy;
+    }
     try {
       final HttpsCallable callable = functions.httpsCallable('getLeaderboard');
       final result = await callable.call({'limit': limit});
-      final List<dynamic> data = result.data ?? [];
-      return data
-          .map((e) => {'name': e['name'] ?? 'Player', 'score': e['score'] ?? 0})
-          .toList();
+      final Map<String, dynamic> payload =
+          result.data as Map<String, dynamic>? ?? {};
+      final List<dynamic> list = payload['leaderboard'] as List<dynamic>? ?? [];
+
+      // Determine current user id so we can mark the local user as "You".
+      // Also support guest ids stored locally so guest players see themselves.
+      String currentUid = fb.FirebaseAuth.instance.currentUser?.uid ?? '';
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final guest = prefs.getString('guest_id') ?? '';
+        if (currentUid.isEmpty && guest.isNotEmpty) currentUid = guest;
+      } catch (_) {}
+
+      final mapped = list.map((e) {
+        try {
+          final playerId = e['playerId'] ?? e['rawId'] ?? '';
+          final name = e['name'] ?? 'Player';
+          final score = (e['score'] is num)
+              ? (e['score'] as num).toInt()
+              : int.tryParse('${e['score']}') ?? 0;
+          return {'playerId': playerId, 'name': name, 'score': score};
+        } catch (_) {
+          return {'playerId': '', 'name': 'Player', 'score': 0};
+        }
+      }).toList();
+
+      // If the current user appears in the returned list, replace their
+      // visible name with "You" so the player can easily find themselves.
+      bool foundCurrent = false;
+      if (currentUid.isNotEmpty) {
+        for (final item in mapped) {
+          if (item['playerId'] == currentUid) {
+            item['name'] = 'You';
+            foundCurrent = true;
+          }
+        }
+      }
+
+      // If the current user isn't in the top list, fetch and use their entry as 'You'.
+      if (!foundCurrent && currentUid.isNotEmpty) {
+        try {
+          final svc = CompetitionService();
+          final weekId = svc.getCurrentWeekId();
+          final entry = await svc.getUserEntry(weekId, currentUid);
+          if (entry != null) {
+            mapped.add({
+              'playerId': currentUid,
+              'name': 'You',
+              'score': entry.xp,
+            });
+          } else {
+            // As a last resort, show a placeholder You row with zero XP
+            mapped.add({'playerId': currentUid, 'name': 'You', 'score': 0});
+          }
+        } catch (_) {
+          mapped.add({'playerId': currentUid, 'name': 'You', 'score': 0});
+        }
+      }
+
+      return mapped.cast<Map<String, dynamic>>();
     } catch (_) {
       return [];
     }

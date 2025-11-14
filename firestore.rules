@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isGuest(id) {
+      return id.matches('^guest_.*$');
+    }
+
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    // --- USERS ---
+    match /Users/{userId} {
+      // Public profiles are readable by anyone
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // --- SCORES ---
+    match /scores/{playerId} {
+      // Scores (non-competition) are public for leaderboard-like display
+      allow read: if true;
+      allow write: if (request.auth != null && request.auth.uid == playerId)
+                   || (playerId.matches('^guest_.*$') && request.resource.data.keys().hasAll(['wins','draws','losses','points']));
+    }
+
+    // --- COMPETITION SCORES ---
+    match /competitionScores/{weekId}/players/{playerId} {
+      // Competition scores are sensitive; allow reads only to the player themself
+      // or to admins. Guest entries may be readable by anyone if desired.
+      allow read: if (request.auth != null && request.auth.uid == playerId) || isAdmin() || isGuest(playerId);
+      allow write: if (request.auth != null && request.auth.uid == playerId)
+                   || (playerId.matches('^guest_.*$') && request.resource.data.keys().hasAll(['points','wins','draws','losses']));
+    }
+
+    // --- LEADERBOARDS ---
+    // Public (user-facing) leaderboard documents may be allowed to read, but
+    // the competition leaderboard that we use for server-seeded bots must not
+    // be readable by arbitrary clients to avoid exposing internal bot IDs.
+    match /leaderboard/{playerId} {
+      allow read: if true;
+      allow write: if (request.auth != null && request.auth.uid == playerId)
+                   || (playerId.matches('^guest_.*$'));
+    }
+
+    // The weekly competition leaderboard (server-managed) should NOT be
+    // readable by arbitrary clients. Clients must use an authenticated
+    // callable (e.g. `getLeaderboard`) which returns a sanitized view.
+    match /competitionLeaderboard/{weekId}/topPlayers/{playerId} {
+      allow read: if false;
+      // Only admins (or server-side trusted clients using custom claims)
+      // may write via the client; normal clients must not write leaderboard
+      // entries. Note: Cloud Functions using the Admin SDK bypass rules.
+      allow write: if isAdmin();
+    }
+
+    // --- MATCHES ---
+    // Matches for quick friend invites may be readable by either participant
+    // so the client can listen to their own match document. Allow guest ids
+    // to function as well.
+    match /matches/{matchId} {
+      allow read: if request.auth != null && (resource.data.playerXUID == request.auth.uid || resource.data.playerOUID == request.auth.uid)
+                   || (resource.data.playerXUID is string && resource.data.playerXUID.matches('^guest_.*$'))
+                   || (resource.data.playerOUID is string && resource.data.playerOUID.matches('^guest_.*$'));
+
+      allow create: if (request.auth != null && request.auth.uid == request.resource.data.playerXUID)
+                    || (request.resource.data.playerXUID is string && request.resource.data.playerXUID.matches('^guest_.*$'));
+
+      allow update: if request.auth != null && (request.auth.uid == resource.data.playerXUID || request.auth.uid == resource.data.playerOUID);
+
+      allow delete: if false;
+    }
+
+    // --- TOURNAMENT MATCHES ---
+    // Tournament matches are sensitive; only the two participants (or admins)
+    // can read their own match docs. Clients must NOT be able to write these
+    // documents directly; server-side functions will create/update them.
+    match /tournamentMatches/{matchId} {
+      allow read: if (request.auth != null && (resource.data.playerXUID == request.auth.uid || resource.data.playerOUID == request.auth.uid)) || isAdmin();
+      allow write: if false;
+    }
+
+    // --- TOURNAMENT QUEUES ---
+    match /tournamentQueues/{tournamentId}/queue/{queueId} {
+      allow read: if true;
+      allow write: if (request.auth != null && request.auth.uid == request.resource.data.playerId) || (request.resource.data.playerId.matches('^guest_.*$'));
+    }
+
+    // --- COMPETITION ENTRIES ---
+    match /competitions/{weekId}/entries/{playerId} {
+      allow read: if true;
+      allow write: if (request.auth != null && request.auth.uid == playerId) || playerId.matches('^guest_.*$');
+    }
+
+    // Default: deny everything else
+    match /{document=**} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}

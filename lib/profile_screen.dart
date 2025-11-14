@@ -70,21 +70,6 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(nameText);
 
-    // Player's current league badge beside name
-    try {
-      String badgeAsset = 'Bronze I.png';
-      if (league.toLowerCase() == 'silver') badgeAsset = 'Silver II.png';
-      if (league.toLowerCase() == 'gold') badgeAsset = 'Gold III.png';
-      final badgeSprite = await game.loadSprite(badgeAsset);
-      final badge = SpriteComponent(
-        sprite: badgeSprite,
-        size: Vector2(40, 40),
-        position: Vector2(game.size.x / 2 - 115, 253),
-        anchor: Anchor.center,
-      );
-      add(badge);
-    } catch (_) {}
-
     statsText = TextComponent(
       text: 'W:$wins  L:$losses  D:$draws',
       position: Vector2(game.size.x / 2, 290),

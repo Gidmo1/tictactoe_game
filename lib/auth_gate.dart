@@ -56,27 +56,6 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
-  Future<void> _signInWithTikTok() async {
-    setState(() {
-      _loading = true;
-    });
-
-    try {
-      // Placeholder: integrate TikTok OAuth here. For now just simulate a
-      // successful sign-in flow when testing.
-      await Future.delayed(const Duration(seconds: 1));
-      await Future.delayed(const Duration(seconds: 1));
-      if (mounted) {
-        Navigator.of(context).pop();
-        widget.onLoginSuccess?.call();
-      }
-    } catch (e) {
-      debugPrint('TikTok login failed: $e');
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,7 +68,7 @@ class _AuthGateState extends State<AuthGate> {
                 height: 420,
                 decoration: BoxDecoration(
                   image: const DecorationImage(
-                    image: AssetImage('confirmation_overlay.png'),
+                    image: AssetImage('assets/images/confirmation_overlay.png'),
                     fit: BoxFit.cover,
                   ),
                   borderRadius: BorderRadius.circular(12),
@@ -131,17 +110,6 @@ class _AuthGateState extends State<AuthGate> {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        ElevatedButton.icon(
-                          onPressed: _signInWithTikTok,
-                          icon: const FaIcon(
-                            FontAwesomeIcons.tiktok,
-                            color: Colors.white,
-                          ),
-                          label: const Text('TikTok'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
