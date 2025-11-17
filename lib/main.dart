@@ -29,6 +29,43 @@ void main() async {
     'background_music.mp3',
   ]);
 
+  // Preload some mostly used images for fast loading on screens
+  final preloadNames = [
+    'loading.png',
+    'leaderboard_background.png',
+    'background.png',
+    'return.png',
+    'joinatournament.png',
+    'play.png',
+    'Bronze I.png',
+    'Silver II.png',
+    'Gold III.png',
+    'confirmation_overlay.png',
+    'copy.png',
+    'sharewhatsapp.png',
+  ];
+
+  Future<void> _tryLoad(String key) async {
+    try {
+      await Flame.images.load(key);
+      debugPrint('Preloaded image: $key');
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  try {
+    for (final name in preloadNames) {
+      // Common variants used in projects
+      await _tryLoad(name);
+      await _tryLoad('images/$name');
+      await _tryLoad('assets/images/$name');
+      await _tryLoad('assets/$name');
+    }
+  } catch (_) {
+    // Non-fatal if specific assets are missing; the app will fall back.
+  }
+
   runApp(const MyApp());
 }
 

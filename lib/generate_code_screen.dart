@@ -14,6 +14,7 @@ import 'dart:io' show Platform;
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:share_plus/share_plus.dart';
 import 'tictactoe.dart';
+import 'components/loading_placeholder.dart';
 import 'service/guest_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -28,13 +29,31 @@ class GenerateCodeScreen extends Component
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    final bg = SpriteComponent()
-      ..sprite = await game.loadSprite('background.png')
-      ..size = game.size
-      ..position = Vector2.zero()
-      ..priority = 0;
-    add(bg);
-    // start the generate flow soon
+    // Show a placeholder immediately so the user doesn't see a black screen
+    final placeholder = LoadingPlaceholder(size: game.size);
+    add(placeholder);
+
+    // Load the real background in the background and swap in when ready
+    Future.microtask(() async {
+      try {
+        final sp = await game.loadSprite('background.png');
+        final bg = SpriteComponent()
+          ..sprite = sp
+          ..size = game.size
+          ..position = Vector2.zero()
+          ..priority = 0;
+        add(bg);
+      } catch (e) {
+        debugPrint('Failed to load background.png: $e');
+      } finally {
+        // remove placeholder once we've attempted to load the real BG
+        try {
+          placeholder.removeFromParent();
+        } catch (_) {}
+      }
+    });
+
+    // start the generate flow soon (can run while background loads)
     Future.microtask(() => startGenerateFlow());
   }
 
@@ -44,6 +63,8 @@ class GenerateCodeScreen extends Component
       () => generatedCode ?? '',
       position: Vector2(game.size.x / 2, 230),
     );
+    // Ensure the code display is rendered above loading placeholders
+    codeDisplay.priority = 11050;
     add(codeDisplay);
 
     // try a few codes on the server
@@ -115,11 +136,10 @@ class GenerateCodeScreen extends Component
   }
 
   void _showInviteControls(String matchId, String code) {
-    // place buttons below center, stacked vertically
-    final centerX = game.size.x / 2;
+    final centerX = game.size.x / 2 + 125;
     final centerY = game.size.y / 2;
-    copyButtonPos = Vector2(centerX, centerY + 80);
-    shareButtonPos = Vector2(centerX, centerY + 160);
+    copyButtonPos = Vector2(centerX, centerY + 140);
+    shareButtonPos = Vector2(centerX, centerY + 220);
 
     final copyBtn = _ImageButton(
       spriteName: 'copy.png',
@@ -539,11 +559,21 @@ class _ImageButton extends PositionComponent with TapCallbacks {
 class _CodeDisplay extends PositionComponent {
   final String Function() getter;
   _CodeDisplay(this.getter, {required Vector2 position})
-    : super(position: position, size: Vector2(160, 60), anchor: Anchor.center);
+    : super(position: position, size: Vector2(240, 80), anchor: Anchor.center);
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    // darker rounded-ish background for contrast so codes are readable
+    add(
+      RectangleComponent(
+        size: size,
+        position: Vector2.zero(),
+        anchor: Anchor.topLeft,
+        paint: Paint()..color = Colors.black.withOpacity(0.5),
+      ),
+    );
+
     add(
       TextComponent(
         text: getter(),
@@ -552,8 +582,16 @@ class _CodeDisplay extends PositionComponent {
         textRenderer: TextPaint(
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 20,
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
             letterSpacing: 6,
+            shadows: [
+              Shadow(
+                color: Colors.black54,
+                offset: Offset(0, 1),
+                blurRadius: 2,
+              ),
+            ],
           ),
         ),
       ),

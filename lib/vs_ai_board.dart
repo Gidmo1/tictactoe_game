@@ -521,7 +521,7 @@ class TicTacToeVsAI extends Component {
   Future<void> applySymbolSettings() async {
     humanPlayer = humanIsX ? 'X' : 'O';
     aiPlayer = humanIsX ? 'O' : 'X';
-    // Load appropriate sprites for the icons (safe to call multiple times)
+    // Load appropriate sprites for the icons
     try {
       humanIcon.sprite =
           await (findGame()?.loadSprite(

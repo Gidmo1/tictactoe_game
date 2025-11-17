@@ -24,15 +24,15 @@ class JoinMatchScreen extends Component with HasGameReference<TicTacToeGame> {
 
     add(bg);
 
-    // Return button (top-left) — go back to the invite options screen
-    final returnSprite = await game.loadSprite('return.png');
+    // Return button
+    /*final returnSprite = await game.loadSprite('return.png');
     add(
       _ReturnButton(
         sprite: returnSprite,
         position: Vector2(10, 40),
         onPressed: () => game.router.pushReplacementNamed('invite_options'),
       ),
-    );
+    );*/
 
     // Label above input box
     add(
@@ -47,7 +47,6 @@ class JoinMatchScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
 
-    // Add a wider, centered input display so it isn't stuck on the right
     final inputDisplay = _InputDisplay(
       () => input,
       position: Vector2(game.size.x / 2, 140),

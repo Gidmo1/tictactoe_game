@@ -10,7 +10,9 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'service/competition_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'models/competition.dart';
+import 'components/loading_placeholder.dart';
 
 // Buttons
 class _ReturnButton extends SpriteComponent with TapCallbacks {
@@ -68,7 +70,7 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
   }
 }
 
-class _TextButton extends PositionComponent with TapCallbacks {
+/*class _TextButton extends PositionComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String text;
   final double width;
@@ -114,7 +116,7 @@ class _TextButton extends PositionComponent with TapCallbacks {
     add(ScaleEffect.to(Vector2(0.95, 0.95), EffectController(duration: 0.06)));
     Future.delayed(const Duration(milliseconds: 150), onPressed);
   }
-}
+}*/
 
 // LEADERBOARD
 
@@ -433,7 +435,10 @@ class _ScrollableLeaderboardContainer extends PositionComponent
 // COMPETITION SCREEN
 class CompetitionScreen extends Component with HasGameReference {
   List<Map<String, dynamic>> leaderboardEntries = [];
-  late SpriteComponent loadingIndicator;
+  late LoadingPlaceholder loadingPlaceholder;
+  // cached leaderboard UI shown immediately if stored snapshot exists
+  Component? _cachedLeaderboardContainer;
+  bool _cachedShown = false;
   final FirebaseFunctions functions = FirebaseFunctions.instance;
   // When true, show a local dummy leaderboard immediately and skip network.
   // Useful for fast local testing or when you want an instant UI.
@@ -524,50 +529,71 @@ class CompetitionScreen extends Component with HasGameReference {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    final bg = SpriteComponent()
-      ..sprite = await game.loadSprite('leaderboard_background.png')
-      ..size = game.size
-      ..position = Vector2.zero();
-    add(bg);
+    // Loading placeholder (draws background.png and a rotating loading.png
+    // if available). Avoid using rect shapes so visuals come from assets.
+    loadingPlaceholder = LoadingPlaceholder(size: game.size);
+    add(loadingPlaceholder);
+    add(loadingPlaceholder);
 
-    // Load a spinner sprite; if this fails for any reason, fall back to a
-    // simple rotating rectangle so the UI always shows a loading indicator.
+    // Try to load cached leaderboard from local storage
     try {
-      final sprite = await game.loadSprite('loading.png');
-      loadingIndicator = SpriteComponent()
-        ..sprite = sprite
-        ..size = Vector2(60, 60)
-        ..position = game.size / 2
-        ..anchor = Anchor.center
-        ..priority = 1000;
-      add(loadingIndicator);
-      loadingIndicator.add(
-        RotateEffect.by(6.28, EffectController(duration: 1, infinite: true)),
-      );
-    } catch (e) {
-      // Fallback: rotating rectangle so we always have a visible spinner
-      loadingIndicator = SpriteComponent()
-        ..size = Vector2(60, 60)
-        ..position = game.size / 2
-        ..anchor = Anchor.center
-        ..priority = 1000;
-      final rect = RectangleComponent(
-        size: Vector2(28, 28),
-        position: Vector2.zero(),
-        anchor: Anchor.center,
-        paint: Paint()..color = Colors.white,
-      );
-      loadingIndicator.add(rect);
-      add(loadingIndicator);
-      loadingIndicator.add(
-        RotateEffect.by(6.28, EffectController(duration: 1, infinite: true)),
-      );
-      // Helpful debug log to surface load problems in the console.
-      // Use debugPrint to avoid noisy logs in production builds.
-      debugPrint(
-        'competition_screen: failed to load loading.png, using fallback spinner: $e',
-      );
-    }
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cached_leaderboard');
+      if (cached != null && cached.isNotEmpty) {
+        try {
+          final List<dynamic> raw = jsonDecode(cached) as List<dynamic>;
+          final List<Map<String, dynamic>> entries = raw.map((e) {
+            if (e is Map<String, dynamic>) return e;
+            return Map<String, dynamic>.from(e as Map);
+          }).toList();
+
+          // show cached leaderboard container immediately
+          _cachedLeaderboardContainer = _ScrollableLeaderboardContainer(
+            entries: entries,
+            width: game.size.x,
+            height: game.size.y - 300,
+            y: 160,
+          );
+          _cachedLeaderboardContainer!.priority = 100;
+          add(_cachedLeaderboardContainer!);
+          _cachedShown = true;
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    // Load background image asynchronously
+    Future.microtask(() async {
+      try {
+        Sprite? sprite;
+        try {
+          sprite = await game.loadSprite('leaderboard_background.png');
+          debugPrint('CompetitionScreen: loaded leaderboard_background.png');
+        } catch (_) {
+          debugPrint(
+            'CompetitionScreen: leaderboard_background.png not found, trying background.png',
+          );
+          try {
+            sprite = await game.loadSprite('background.png');
+            debugPrint('CompetitionScreen: loaded background.png');
+          } catch (_) {
+            sprite = null;
+          }
+        }
+
+        if (sprite != null) {
+          final bg = SpriteComponent()
+            ..sprite = sprite
+            ..size = game.size
+            ..position = Vector2.zero();
+          add(bg);
+          debugPrint('CompetitionScreen: background sprite added');
+          // Remove the loading placeholder once we've added the real bg
+          try {
+            loadingPlaceholder.removeFromParent();
+          } catch (_) {}
+        }
+      } catch (_) {}
+    });
 
     // Internet check
     bool online = true;
@@ -581,7 +607,9 @@ class CompetitionScreen extends Component with HasGameReference {
     }
 
     if (!online) {
-      remove(loadingIndicator);
+      try {
+        loadingPlaceholder.removeFromParent();
+      } catch (_) {}
       // Show retry UI handled here
       return;
     }
@@ -591,7 +619,27 @@ class CompetitionScreen extends Component with HasGameReference {
 
   Future<void> _showLeaderboardUI() async {
     leaderboardEntries = await _fetchTopPlayers(8);
-    remove(loadingIndicator);
+    // Cache leaderboard entries locally
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'cached_leaderboard',
+        jsonEncode(leaderboardEntries),
+      );
+    } catch (_) {}
+    try {
+      if (_cachedLeaderboardContainer != null) {
+        try {
+          _cachedLeaderboardContainer!.removeFromParent();
+        } catch (_) {}
+        _cachedLeaderboardContainer = null;
+        _cachedShown = false;
+      }
+    } catch (_) {}
+
+    try {
+      loadingPlaceholder.removeFromParent();
+    } catch (_) {}
 
     add(
       _ScrollableLeaderboardContainer(
@@ -638,7 +686,7 @@ class CompetitionScreen extends Component with HasGameReference {
       final prefs = await SharedPreferences.getInstance();
       userJoined =
           userJoined || (prefs.getBool('joinedTournament_$weekId') ?? false);
-      // If we don't have an entry object, try to read a stored league hint
+      // Override league from local storage if available
       userLeague = prefs.getString('player_league') ?? userLeague;
     } catch (_) {}
 
@@ -655,7 +703,7 @@ class CompetitionScreen extends Component with HasGameReference {
           position: Vector2(game.size.x / 2, bottomStartY),
           size: Vector2(buttonWidth, buttonHeight),
           onPressed: () async {
-            // Allow guest users to join immediately without forcing auth.
+            // Allow guest users to join immediately without forcing authentication.
             final user = await svc.waitForSignIn(
               timeout: const Duration(seconds: 3),
             );
@@ -663,7 +711,7 @@ class CompetitionScreen extends Component with HasGameReference {
               final prefs = await SharedPreferences.getInstance();
 
               if (user == null) {
-                // Create/reuse a persistent guest id (stored locally).
+                // Guest user path
                 String guestId = prefs.getString('guest_id') ?? '';
                 if (guestId.isEmpty) {
                   guestId = 'guest_${DateTime.now().millisecondsSinceEpoch}';
@@ -683,8 +731,7 @@ class CompetitionScreen extends Component with HasGameReference {
 
                 // Mark joined locally so the UI reflects membership.
                 await prefs.setBool('joinedTournament_$weekId', true);
-
-                // Best-effort: inform server of guest join; failures are non-blocking.
+                // Non-blocking server call to join tournament as guest.
                 try {
                   final callable = FirebaseFunctions.instanceFor(
                     region: 'us-central1',
@@ -742,7 +789,7 @@ class CompetitionScreen extends Component with HasGameReference {
             if (flameGame != null) {
               try {
                 (flameGame as dynamic).pendingTournamentAutoSearch = true;
-                // Persist the auto-search flag so TournamentMatchScreen sees it on load.
+                //
                 try {
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setBool('pendingTournamentAutoSearch', true);
