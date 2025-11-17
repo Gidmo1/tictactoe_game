@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'dart:math';
+
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
@@ -438,93 +438,10 @@ class CompetitionScreen extends Component with HasGameReference {
   late LoadingPlaceholder loadingPlaceholder;
   // cached leaderboard UI shown immediately if stored snapshot exists
   Component? _cachedLeaderboardContainer;
-  bool _cachedShown = false;
   final FirebaseFunctions functions = FirebaseFunctions.instance;
   // When true, show a local dummy leaderboard immediately and skip network.
   // Useful for fast local testing or when you want an instant UI.
   bool forceDummyLeaderboard = true;
-  bool confettiRunning = false;
-  final Random _random = Random();
-  final List<Component> _confettiPieces = [];
-
-  void _startConfetti() {
-    if (confettiRunning) return;
-    confettiRunning = true;
-    final size = game.size;
-
-    void spawnConfettiPiece() {
-      if (!confettiRunning) return;
-      final double confettiSize = 4 + _random.nextDouble() * 6;
-      final shapeType = _random.nextInt(3);
-      late PositionComponent confetti;
-      final paint = Paint()
-        ..color = Color.fromARGB(
-          255,
-          _random.nextInt(256),
-          _random.nextInt(256),
-          _random.nextInt(256),
-        );
-
-      switch (shapeType) {
-        case 0:
-          confetti = RectangleComponent(
-            size: Vector2(confettiSize, confettiSize * 1.5),
-            paint: paint,
-            position: Vector2(_random.nextDouble() * size.x, -10),
-            anchor: Anchor.center,
-          );
-          break;
-        case 1:
-          confetti = CircleComponent(
-            radius: confettiSize / 2,
-            paint: paint,
-            position: Vector2(_random.nextDouble() * size.x, -10),
-            anchor: Anchor.center,
-          );
-          break;
-        default:
-          confetti = PolygonComponent(
-            [
-              Vector2(0, 0),
-              Vector2(confettiSize, 0),
-              Vector2(confettiSize / 2, confettiSize),
-            ],
-            paint: paint,
-            position: Vector2(_random.nextDouble() * size.x, -10),
-            anchor: Anchor.center,
-          );
-      }
-
-      _confettiPieces.add(confetti);
-      add(confetti);
-
-      final fallDuration = 1.5 + _random.nextDouble() * 1.5;
-      confetti.add(
-        MoveEffect.to(
-          Vector2(confetti.x, size.y + 50),
-          EffectController(duration: fallDuration, curve: Curves.linear),
-          onComplete: () {
-            confetti.removeFromParent();
-            _confettiPieces.remove(confetti);
-          },
-        ),
-      );
-
-      confetti.add(
-        RotateEffect.by(
-          _random.nextDouble() * pi * 4,
-          EffectController(duration: fallDuration, curve: Curves.linear),
-        ),
-      );
-      Future.delayed(const Duration(milliseconds: 15), spawnConfettiPiece);
-    }
-
-    spawnConfettiPiece();
-    Future.delayed(
-      const Duration(milliseconds: 2500),
-      () => confettiRunning = false,
-    );
-  }
 
   @override
   Future<void> onLoad() async {
@@ -556,7 +473,6 @@ class CompetitionScreen extends Component with HasGameReference {
           );
           _cachedLeaderboardContainer!.priority = 100;
           add(_cachedLeaderboardContainer!);
-          _cachedShown = true;
         } catch (_) {}
       }
     } catch (_) {}
@@ -638,7 +554,6 @@ class CompetitionScreen extends Component with HasGameReference {
           _cachedLeaderboardContainer!.removeFromParent();
         } catch (_) {}
         _cachedLeaderboardContainer = null;
-        _cachedShown = false;
       }
     } catch (_) {}
 
