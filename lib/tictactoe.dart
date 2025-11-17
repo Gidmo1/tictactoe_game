@@ -115,6 +115,16 @@ class TicTacToeGame extends FlameGame
       overlays.remove('confirmation');
     } catch (_) {}
     _handleMusicForRoute(routeName);
+    // Show a quick Flutter overlay to avoid a black screen when entering
+    // the Competition route. It will be removed by the CompetitionScreen
+    // itself once the Flame background sprite is ready.
+    try {
+      if (routeName == 'competition') {
+        overlays.add('competition_fallback');
+      } else {
+        overlays.remove('competition_fallback');
+      }
+    } catch (_) {}
     // If navigating to invite with a pending match, add the lobby once invite UI is ready.
     if (routeName == 'invite' &&
         pendingMatchId != null &&

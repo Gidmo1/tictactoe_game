@@ -591,6 +591,11 @@ class CompetitionScreen extends Component with HasGameReference {
           try {
             loadingPlaceholder.removeFromParent();
           } catch (_) {}
+          // Remove the Flutter fallback overlay if it's present
+          try {
+            final g = findGame();
+            if (g != null) g.overlays.remove('competition_fallback');
+          } catch (_) {}
         }
       } catch (_) {}
     });

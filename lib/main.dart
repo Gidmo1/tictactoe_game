@@ -482,6 +482,20 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
             ),
           );
         },
+
+        // Competition fallback overlay: a quick Flutter-drawn background that
+        // appears immediately when navigating to the Competition screen so
+        // users never see a black frame while Flame loads sprites.
+        'competition_fallback': (context, game) {
+          return Container(
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/background.png'),
+                fit: BoxFit.cover,
+              ),
+            ),
+          );
+        },
       },
     );
   }
