@@ -52,7 +52,7 @@ class ScoreService {
       debugPrint('Error saving score to Firebase (will cache locally): $e');
     }
 
-  // Fallback: persist guest score locally under guest_score_<playerId> for retry.
+    // Fallback: persist guest score locally under guest_score_<playerId> for retry.
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = 'guest_score_${score.playerId}';
