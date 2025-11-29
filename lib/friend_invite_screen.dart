@@ -11,7 +11,6 @@ import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'service/guest_service.dart';
-import 'components/auth_gate_component.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -491,14 +490,11 @@ class FriendLobbyComponent extends PositionComponent
                         fb.FirebaseAuth.instance.currentUser?.uid ??
                         await GuestService.getOrCreateGuestId();
                     String oppName = 'Opponent';
-                    String opponentId = '';
                     if (myUID == playerXUID) {
-                      opponentId = playerOUID;
                       oppName = poName.isNotEmpty
                           ? poName
                           : (playerOUID.isNotEmpty ? playerOUID : 'Opponent');
                     } else {
-                      opponentId = playerXUID;
                       oppName = pxName.isNotEmpty
                           ? pxName
                           : (playerXUID.isNotEmpty ? playerXUID : 'Opponent');
@@ -517,14 +513,7 @@ class FriendLobbyComponent extends PositionComponent
                     )..priority = 11050;
                     add(foundText);
 
-                    // If opponent is AI and user not signed in, show sign-in gate
-                    if ((opponentId.startsWith('ai_') ||
-                            opponentId.startsWith('bot_')) &&
-                        fb.FirebaseAuth.instance.currentUser == null) {
-                      final gate = AuthGateComponent(onSignedIn: () async {});
-                      gate.priority = 10060;
-                      game.add(gate);
-                    }
+                    // AI opponent handling removed.
 
                     // Wait a short moment so player sees the found message, then route to match screen
                     await Future.delayed(const Duration(milliseconds: 1200));

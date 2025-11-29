@@ -27,6 +27,8 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
   Future<void> onLoad() async {
     await super.onLoad();
 
+    debugPrint('ProfileScreen: onLoad starting');
+
     final bgSprite = await game.loadSprite('background.png');
     background = SpriteComponent(
       sprite: bgSprite,
@@ -43,17 +45,50 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(panel);
 
-    // Avatar
-    final avatarSprite = await game.loadSprite('profile.png');
-    avatar = SpriteComponent(
-      sprite: avatarSprite,
-      size: Vector2(100, 100),
-      position: Vector2(game.size.x / 2 - 50, 140),
-    );
-    add(avatar);
+    // Avatar - prefer chosen avatar if user selected one. Do not use
+    // a generic 'profile.png' fallback; if none chosen, show a placeholder.
+    Sprite? avatarSprite;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final chosen = prefs.getString('chosen_avatar') ?? '';
+      if (chosen.isNotEmpty) {
+        // Try multiple asset keys for robustness
+        final candidates = [
+          'assets/images/$chosen.png',
+          'images/$chosen.png',
+          '$chosen.png',
+        ];
+        for (final key in candidates) {
+          try {
+            avatarSprite = await game.loadSprite(key);
+            break;
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    if (avatarSprite != null) {
+      avatar = SpriteComponent(
+        sprite: avatarSprite,
+        size: Vector2(100, 100),
+        position: Vector2(game.size.x / 2 - 50, 140),
+      );
+      add(avatar);
+    }
 
     // Load cached and online user info
     await _loadPlayerData();
+    debugPrint(
+      'ProfileScreen: onLoad after _loadPlayerData playerName="$playerName"',
+    );
+
+    // Fetch and display the current Firebase user name if available
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null &&
+        user.displayName != null &&
+        user.displayName!.isNotEmpty) {
+      playerName = user.displayName!;
+    }
 
     // Player name and stats
     nameText = TextComponent(
@@ -69,6 +104,15 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
       ),
     );
     add(nameText);
+
+    // Pencil/edit button beside the name to open the profile editor
+    try {
+      final editBtn = _NameEditButton(
+        position: Vector2(game.size.x / 2 + 100, 250),
+        gameRef: game,
+      );
+      add(editBtn);
+    } catch (_) {}
 
     statsText = TextComponent(
       text: 'W:$wins  L:$losses  D:$draws',
@@ -130,14 +174,31 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     final user = FirebaseAuth.instance.currentUser;
 
     // Load saved data instantly
-    playerName = prefs.getString('playerName') ?? 'Anonymous';
+    final storedName = prefs.getString('playerName');
+    debugPrint('ProfileScreen._loadPlayerData: storedName=$storedName');
+    playerName = (storedName != null && storedName.trim().isNotEmpty)
+        ? storedName
+        : 'Anonymous';
+    debugPrint(
+      'ProfileScreen._loadPlayerData: playerName after prefs="$playerName"',
+    );
     wins = prefs.getInt('wins') ?? 0;
     losses = prefs.getInt('losses') ?? 0;
     draws = prefs.getInt('draws') ?? 0;
 
     // Then try to fetch updated data from Firestore
     if (user != null) {
-      playerName = user.displayName ?? playerName;
+      final fd = user.displayName;
+      if (fd != null && fd.trim().isNotEmpty) {
+        playerName = fd;
+        debugPrint(
+          'ProfileScreen._loadPlayerData: using Firebase displayName="$playerName"',
+        );
+      } else {
+        debugPrint(
+          'ProfileScreen._loadPlayerData: Firebase displayName empty, keeping prefs value="$playerName"',
+        );
+      }
       try {
         final doc = await FirebaseFirestore.instance
             .collection('scores')
@@ -184,6 +245,38 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
       }
     }
   }
+
+  // Public method to refresh the displayed name and avatar from SharedPreferences.
+  Future<void> refreshFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Update name
+      final stored = prefs.getString('playerName');
+      debugPrint('ProfileScreen.refreshFromPrefs: stored="$stored"');
+      playerName = (stored != null && stored.trim().isNotEmpty)
+          ? stored
+          : playerName;
+      debugPrint(
+        'ProfileScreen.refreshFromPrefs: updating nameText to "$playerName"',
+      );
+      try {
+        nameText.text = playerName;
+      } catch (e) {
+        debugPrint(
+          'ProfileScreen.refreshFromPrefs: failed to set nameText: $e',
+        );
+      }
+
+      // Update avatar sprite if chosen
+      final chosen = prefs.getString('chosen_avatar') ?? '';
+      if (chosen.isNotEmpty) {
+        try {
+          final spr = await game.loadSprite('$chosen.png');
+          avatar.sprite = spr;
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
 }
 
 class _ReturnButton extends SpriteComponent with TapCallbacks {
@@ -205,5 +298,41 @@ class _ReturnButton extends SpriteComponent with TapCallbacks {
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     onPressed();
+  }
+}
+
+class _NameEditButton extends PositionComponent with TapCallbacks {
+  final TicTacToeGame gameRef;
+  final TextPaint _textPaint = TextPaint(
+    style: const TextStyle(
+      color: Colors.white,
+      fontSize: 14,
+      fontWeight: FontWeight.bold,
+    ),
+  );
+
+  _NameEditButton({required Vector2 position, required this.gameRef})
+    : super(position: position, size: Vector2(64, 28), anchor: Anchor.center);
+
+  @override
+  void render(Canvas canvas) {
+    // Draw rounded rect background
+    final rect =
+        Offset(position.x - size.x / 2, position.y - size.y / 2) &
+        Size(size.x, size.y);
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(8));
+    final paint = Paint()..color = const Color(0x66000000);
+    canvas.drawRRect(rrect, paint);
+
+    _textPaint.render(canvas, 'Edit', position - Vector2(18, 6));
+    super.render(canvas);
+  }
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    try {
+      if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
+      gameRef.overlays.add('edit_profile_inline');
+    } catch (_) {}
   }
 }

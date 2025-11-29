@@ -1,20 +1,19 @@
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math';
+import 'package:uuid/uuid.dart';
 
 class GuestService {
   static const _kGuestKey = 'guest_player_id';
+  static final _uuid = Uuid();
 
+  /// Returns a stable guest id persisted in `SharedPreferences`.
+  /// If none exists, generates a v4 UUID and persists it.
   static Future<String> getOrCreateGuestId() async {
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getString(_kGuestKey);
     if (existing != null && existing.isNotEmpty) return existing;
 
-    // generate a short guest id
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    final rand = Random();
-    final sb = StringBuffer('guest_');
-    for (var i = 0; i < 8; i++) sb.write(chars[rand.nextInt(chars.length)]);
-    final id = sb.toString();
+    // Generate a v4 UUID for the guest id for cross-platform stability.
+    final id = _uuid.v4();
     await prefs.setString(_kGuestKey, id);
     return id;
   }

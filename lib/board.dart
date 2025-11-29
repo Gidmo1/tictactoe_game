@@ -6,6 +6,7 @@ import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TicTacToeCell extends PositionComponent with TapCallbacks {
   final int row, col;
@@ -65,19 +66,31 @@ class TicTacToeBoard extends Component {
       ..position = Vector2.zero();
     add(background);
 
-    // Player profile image
+    // Player profile image - use chosen avatar if available
     try {
-      final profile = SpriteComponent()
-        ..sprite =
-            await (findGame()?.loadSprite('profile.png') ??
-                Sprite.load('profile.png'))
-        ..size = Vector2(56, 56)
-        ..position = Vector2(20, 40)
-        ..anchor = Anchor.topLeft;
-      add(profile);
+      final prefs = await SharedPreferences.getInstance();
+      final chosen = prefs.getString('chosen_avatar');
+      Sprite? sprite;
+      if (chosen != null && chosen.isNotEmpty) {
+        try {
+          sprite =
+              await (findGame()?.loadSprite('$chosen.png') ??
+                  Sprite.load('$chosen.png'));
+        } catch (_) {
+          sprite = null;
+        }
+      }
+      if (sprite != null) {
+        final profile = SpriteComponent()
+          ..sprite = sprite
+          ..size = Vector2(56, 56)
+          ..position = Vector2(20, 40)
+          ..anchor = Anchor.topLeft;
+        add(profile);
+      }
     } catch (e) {
-      // If asset missing or fails to load, ignore silently to avoid spoiling my game
-      print('Failed to load profile.png: $e');
+      // If asset missing or fails to load, ignore silently
+      print('Failed to load profile image: $e');
     }
 
     // Message text

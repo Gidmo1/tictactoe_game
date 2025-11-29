@@ -9,12 +9,14 @@ import 'package:tictactoe_game/settings_screen.dart';
 import 'service/competition_service.dart';
 
 class TournamentMatchScreen extends Component {
-  TextComponent? statusText;
+  late TextComponent statusText;
   bool _isSearching = false;
   bool _isRemoved = false;
-  TextComponent? detailText;
+  late TextComponent detailText;
   int _attempts = 0;
   String _lastError = '';
+  // Use late fields for commonly loaded assets to initialize once in onLoad
+  late Sprite _backgroundSprite;
 
   @override
   Future<void> onLoad() async {
@@ -42,13 +44,15 @@ class TournamentMatchScreen extends Component {
       } catch (_) {}
     }
 
-    // Background
-    final background = SpriteComponent()
-      ..sprite =
-          await (findGame()?.loadSprite('background.png') ??
-              Sprite.load('background.png'))
-      ..size = canvasSize
-      ..position = Vector2.zero();
+    // Background - load once into a late field and reuse
+    _backgroundSprite =
+        await (findGame()?.loadSprite('background.png') ??
+            Sprite.load('background.png'));
+    final background = SpriteComponent(
+      sprite: _backgroundSprite,
+      size: canvasSize,
+      position: Vector2.zero(),
+    );
     add(background);
 
     // If autoSearch requested, the screen stays in searching state until matched or exit.
@@ -63,7 +67,7 @@ class TournamentMatchScreen extends Component {
         style: const TextStyle(color: Colors.white, fontSize: 20),
       ),
     );
-    add(statusText!);
+    add(statusText);
 
     // Small detail text for debug or info
     detailText = TextComponent(
@@ -74,7 +78,7 @@ class TournamentMatchScreen extends Component {
         style: const TextStyle(color: Colors.white70, fontSize: 12),
       ),
     );
-    add(detailText!);
+    add(detailText);
 
     // If autoSearch requested, begin matchmaking when UI is ready.
     if (autoSearch) {
@@ -91,13 +95,13 @@ class TournamentMatchScreen extends Component {
     _isRemoved = true;
     // Cancel matchmaking to ensure we don't leave stale queue entries.
     _cancelMatchmaking();
-    statusText?.text = 'Waiting for opponent...';
+    statusText.text = 'Waiting for opponent...';
   }
 
   Future<void> _startMatchmakingLocked() async {
     if (_isSearching || _isRemoved) return;
     _isSearching = true;
-    statusText?.text = 'Searching for opponent...';
+    statusText.text = 'Searching for opponent...';
 
     final svc = CompetitionService();
     final user = await svc.waitForSignIn();
@@ -113,7 +117,7 @@ class TournamentMatchScreen extends Component {
       while (_isSearching && !_isRemoved) {
         _attempts++;
         try {
-          detailText?.text = '';
+          detailText.text = '';
           final data = await svc.matchmakeForTournament(
             weekId: tournamentId,
             userId: userId,
@@ -124,7 +128,7 @@ class TournamentMatchScreen extends Component {
           final status = dataMap['status'] as String? ?? 'unknown';
 
           if (status == 'waiting' || status == 'already_in_queue') {
-            statusText?.text = 'Waiting for an opponent...';
+            statusText.text = 'Waiting for an opponent...';
 
             // Wait briefly and check elapsed time before considering fallback.
             await Future.delayed(const Duration(seconds: 1));
@@ -132,7 +136,7 @@ class TournamentMatchScreen extends Component {
 
             if (elapsed >= fallbackSeconds) {
               // AI fallback disabled: continue searching for human opponents.
-              detailText?.text = 'Still searching for human opponents...';
+              detailText.text = 'Still searching for human opponents...';
               // Small backoff before the next matchmaking attempt to avoid tight loop
               await Future.delayed(const Duration(seconds: 1));
               continue;
@@ -165,15 +169,15 @@ class TournamentMatchScreen extends Component {
             }
           }
 
-          statusText?.text = 'Unknown status: $status';
+          statusText.text = 'Unknown status: $status';
           break;
         } catch (e) {
           if (!_isRemoved) {
             _lastError = e.toString();
-            statusText?.text = 'Matchmaking error. Retrying...';
-            /*detailText?.text =
+            statusText.text = 'Matchmaking error. Retrying...';
+            detailText.text =
                 'Attempts: $_attempts • Last error: ${_lastError.length > 120 ? _lastError.substring(0, 120) + '...' : _lastError}';
-            debugPrint('Matchmaking error: $e');*/
+            debugPrint('Matchmaking error: $e');
             // Wait a little before retrying; if the randomized fallback
             // time has elapsed, attempt the AI creation as a fallback.
             await Future.delayed(const Duration(seconds: 2));
@@ -199,7 +203,7 @@ class TournamentMatchScreen extends Component {
   Future<void> _cancelMatchmaking() async {
     if (!_isSearching) return;
     _isSearching = false;
-    statusText?.text = 'Waiting for opponent';
+    statusText.text = 'Waiting for opponent';
 
     final fbUser = FirebaseAuth.instance.currentUser;
     final userId =

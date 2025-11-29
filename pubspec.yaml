@@ -13,24 +13,27 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   flame: "^1.12.0"
-  firebase_core: ^4.0.0
-  firebase_database: ^12.0.0
+  # Supabase (replacing Firebase)
+  supabase_flutter: ^1.2.0
+  # firebase packages left temporarily for reference during migration
+  # (remove them once migration is complete)
+  # firebase_core: ^4.0.0
+  # firebase_database: ^12.0.0
   sqflite: ^2.4.2
-  firebase_auth: ^6.0.1
+  # firebase_auth: ^6.0.1
   audioplayers: ^6.5.0
   flame_audio: ^2.11.10
-  cloud_firestore: ^6.0.0
-  flutter_facebook_auth: 6.2.0
-  firebase_ui_auth: ^3.0.0
-  firebase_ui_oauth_facebook: ^2.0.0
+  # cloud_firestore: ^6.0.0
   font_awesome_flutter: ^10.6.0
-  cloud_functions: ^6.0.2
+  google_sign_in: ^7.0.0
+  # cloud_functions: ^6.0.2
   shared_preferences: ^2.5.3
   url_launcher: ^6.3.0
   app_links: ^6.4.1
   connectivity_plus: ^4.0.0
   android_intent_plus: ^6.0.0
   share_plus: ^12.0.1
+  uuid: ^3.0.7
 
   
 
@@ -74,6 +77,10 @@ flutter:
     - assets/images/confirmation_overlay_message.png
     - assets/images/generate_code.png
     - assets/images/search.png
+    - assets/images/annah.png
+    - assets/images/david.png
+    - assets/images/piper.png
+    - assets/images/andrew.png
     - assets/images/confetti.png
     - assets/images/toggle_right.png
     - assets/images/join_match.png
@@ -83,6 +90,7 @@ flutter:
     - assets/images/copy.png
     - assets/images/join.png
     - assets/images/cancel.png
+    - assets/images/save.png
     - assets/images/joinatournament.png
     - assets/images/leaderboard_background.png
     - assets/images/profile_background.png

@@ -46,7 +46,6 @@ class TicTacToeInviteScreen extends Component {
     region: 'us-central1',
   );
   StreamSubscription<DocumentSnapshot>? matchSubscription;
-  bool _aiMoveScheduled = false;
 
   bool confettiRunning = false;
   final Random random = Random();
@@ -426,8 +425,7 @@ class TicTacToeInviteScreen extends Component {
               final overlayMessage = winnerUID == ''
                   ? 'Draw!'
                   : (winnerUID == myUID ? 'You win!' : 'You lose!');
-              // Cancel any pending AI scheduling so client won't trigger further moves
-              _aiMoveScheduled = false;
+              // Cancel any pending AI scheduling so client won't trigger further moves (AI removed)
               messageText.text = overlayMessage;
               _startConfetti();
 
@@ -554,31 +552,7 @@ class TicTacToeInviteScreen extends Component {
                   ? "Your turn"
                   : "Opponent's turn";
 
-              // If opponent is an AI, schedule server-side AI move after a short delay
-              try {
-                final opponentId = (data['playerOUID'] ?? '') as String;
-                if ((opponentId.startsWith('ai_') ||
-                        opponentId.startsWith('bot_')) &&
-                    currentPlayer == opponentId &&
-                    !_aiMoveScheduled) {
-                  _aiMoveScheduled = true;
-                  final delayMs = 500 + Random().nextInt(2500); // 0.5s..3s
-                  Future.delayed(Duration(milliseconds: delayMs), () async {
-                    try {
-                      final functions = FirebaseFunctions.instanceFor(
-                        region: 'us-central1',
-                      );
-                      await functions.httpsCallable('requestAiMove').call({
-                        'matchId': matchId,
-                      });
-                    } catch (e) {
-                      debugPrint('requestAiMove failed: $e');
-                    } finally {
-                      _aiMoveScheduled = false;
-                    }
-                  });
-                }
-              } catch (_) {}
+              // AI opponent handling removed.
             }
           },
           onError: (err) {
@@ -791,7 +765,7 @@ class TicTacToeInviteScreen extends Component {
                     } catch (_) {}
                   },
                 );
-                gate.priority = 10060;
+                gate.priority = 1006000000000;
                 flameGame.add(gate);
                 return;
               }
@@ -897,7 +871,7 @@ class TicTacToeInviteScreen extends Component {
                 } catch (_) {}
               },
             );
-            gate.priority = 10060;
+            gate.priority = 1006000000000;
             flameGame.add(gate);
           } else {
             try {

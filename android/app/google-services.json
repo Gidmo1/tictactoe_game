@@ -9,10 +9,23 @@
       "client_info": {
         "mobilesdk_app_id": "1:790377094949:android:faff905fd701e91bf184cc",
         "android_client_info": {
-          "package_name": "com.ucv.tictactoe_game"
+          "package_name": "com.example.tictactoe_game"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "790377094949-mmm4kn12jdg39en95qv0pidt8jpo5eie.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.tictactoe_game",
+            "certificate_hash": "3cdb5ee7e5fb27c4c1a74a05ff5716a20f76f096"
+          }
+        },
+        {
+          "client_id": "790377094949-srjcl0u50llaqedeihd75c7o64jrqvhe.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCCoaS4NEZUgQCeiwvps_01Efeqvs93h4Q"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "790377094949-srjcl0u50llaqedeihd75c7o64jrqvhe.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

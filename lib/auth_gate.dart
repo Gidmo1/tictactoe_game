@@ -1,8 +1,8 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:tictactoe_game/service/auth_service.dart';
 
+/// Clean single implementation of the AuthGate overlay.
 class AuthGate extends StatefulWidget {
   final VoidCallback? onLoginSuccess;
   const AuthGate({super.key, this.onLoginSuccess});
@@ -13,120 +13,115 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   bool _loading = false;
-
-  Future<void> _signInWithFacebook() async {
-    setState(() {
-      _loading = true;
-    });
-
-    try {
-      final LoginResult result = await FacebookAuth.instance.login(
-        permissions: ['public_profile'],
-      );
-
-      if (result.status == LoginStatus.success && result.accessToken != null) {
-        final accessToken = result.accessToken!.token;
-        final facebookCredential = FacebookAuthProvider.credential(accessToken);
-        await FirebaseAuth.instance.signInWithCredential(facebookCredential);
-
-        // show success then close
-
-        // Give UI a second to show success
-        await Future.delayed(const Duration(seconds: 1));
-
-        if (mounted) {
-          // Close the auth gate dialog/screen
-          Navigator.of(context).pop();
-
-          // Notify parent (if any)
-          widget.onLoginSuccess?.call();
-
-          // Navigate to Competition screen inside Flame router
-          try {} catch (e) {
-            debugPrint('Could not navigate to competition: $e');
-          }
-        }
-      } else {
-        debugPrint('Facebook login failed: ${result.status}');
-      }
-    } catch (e) {
-      debugPrint('Error during Facebook login: $e');
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
+  String? _notice;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.black54,
       body: Center(
-        child: _loading
-            ? const CircularProgressIndicator(color: Colors.white)
-            : Container(
-                width: 420,
-                height: 420,
-                decoration: BoxDecoration(
-                  image: const DecorationImage(
-                    image: AssetImage('assets/images/confirmation_overlay.png'),
-                    fit: BoxFit.cover,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Sign in so you won\'t lose your scores',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        shadows: [
-                          Shadow(
-                            blurRadius: 3,
-                            color: Colors.black,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 520),
+          child: _loading
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Container(
+                  decoration: BoxDecoration(
+                    image: const DecorationImage(
+                      image: AssetImage(
+                        'assets/images/confirmation_overlay.png',
                       ),
+                      fit: BoxFit.cover,
                     ),
-                    const SizedBox(height: 24),
-                    // Buttons row
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _signInWithFacebook,
-                          icon: const FaIcon(
-                            FontAwesomeIcons.facebook,
-                            color: Colors.white,
-                          ),
-                          label: const Text('Facebook'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF3b5998),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 18,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Sign in so you won\'t lose your scores',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              blurRadius: 3,
+                              color: Colors.black,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (_notice != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: Text(
+                            _notice!,
+                            style: const TextStyle(color: Colors.orange),
                           ),
                         ),
-                        const SizedBox(width: 16),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () {
-                        // Allow closing without signing in (continue as guest)
-                        Navigator.of(context).pop();
-                      },
-                      child: const Text(
-                        'Continue as Guest',
-                        style: TextStyle(color: Colors.white),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          minimumSize: const Size(260, 50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero,
+                          ),
+                        ),
+                        icon: FaIcon(
+                          FontAwesomeIcons.google,
+                          size: 20,
+                          color: const Color(0xFFDB4437),
+                        ),
+                        label: const Text('Sign in with Google'),
+                        onPressed: () async {
+                          setState(() {
+                            _loading = true;
+                            _notice = null;
+                          });
+                          try {
+                            final cred = await AuthHelper().signInWithGoogle();
+                            if (cred != null && cred.user != null) {
+                              widget.onLoginSuccess?.call();
+                              if (mounted) Navigator.of(context).pop();
+                              return;
+                            }
+                            setState(() => _notice = 'Sign-in cancelled');
+                          } catch (e) {
+                            setState(
+                              () =>
+                                  _notice = 'Sign-in failed. Please try again.',
+                            );
+                          } finally {
+                            if (mounted) setState(() => _loading = false);
+                          }
+                        },
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: const Text(
+                          'Continue as Guest',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
 }
+
+// trailing duplicate block removed

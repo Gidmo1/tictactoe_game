@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:flame/game.dart';
+import 'package:flame/components.dart';
+import 'components/auth_gate_component.dart';
 import 'tictactoe.dart';
 import 'service/link_service.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -11,6 +14,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'service/guest_service.dart';
 import 'settings_screen.dart';
 import 'package:flame/flame.dart';
+import 'service/auth_service.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'overlays/edit_profile.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,43 +55,21 @@ void main() async {
     try {
       await Flame.images.load(key);
       debugPrint('Preloaded image: $key');
-    } catch (_) {
-      // ignore
+    } catch (e) {
+      debugPrint('Preload failed for $key: $e');
     }
   }
 
-  try {
-    for (final name in preloadNames) {
-      // Common variants used in projects
-      await _tryLoad(name);
-      await _tryLoad('images/$name');
-      await _tryLoad('assets/images/$name');
-      await _tryLoad('assets/$name');
-    }
-  } catch (_) {
-    // Non-fatal if specific assets are missing; the app will fall back.
+  // Try only the most likely locations for preloaded assets. Trying too
+  // many variants caused duplicated paths (e.g. "assets/images/images,...")
+  for (final name in preloadNames) {
+    await _tryLoad(name);
+    await _tryLoad('images/$name');
   }
 
   runApp(const MyApp());
 }
 
-// Invite flow UI uses Flame components; this Flutter overlay only exposes a native text field.
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'TicTacToe Game',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const DeepLinkHandler(),
-    );
-  }
-}
-
-// Handles deep link detection and routes to the game logic
 class DeepLinkHandler extends StatefulWidget {
   const DeepLinkHandler({super.key});
 
@@ -296,6 +280,24 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
   }
 }
 
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Tic Tac Toe',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        scaffoldBackgroundColor: Colors.black,
+        brightness: Brightness.dark,
+      ),
+      home: const DeepLinkHandler(),
+    );
+  }
+}
+
 class _DeepLinkHandlerState extends State<DeepLinkHandler>
     with WidgetsBindingObserver {
   final _game = TicTacToeGame();
@@ -435,8 +437,8 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
 
           final friendlyMsg = msg.contains('network')
               ? 'Network error. Please check your connection.'
-              : msg.contains('Facebook login failed')
-              ? 'Facebook login failed. Try again.'
+              : msg.contains('login failed')
+              ? 'Login failed. Try again.'
               : msg;
 
           return Align(
@@ -492,6 +494,191 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
               image: DecorationImage(
                 image: AssetImage('assets/images/background.png'),
                 fit: BoxFit.cover,
+              ),
+            ),
+          );
+        },
+        // Edit profile / avatar claim overlay: invoked after first completed game
+        'edit_profile': (context, game) {
+          final g = game as TicTacToeGame;
+          return Material(
+            color: Colors.transparent,
+            child: Center(
+              child: EditProfileOverlay(game: g, navigateToProfile: true),
+            ),
+          );
+        },
+        'edit_profile_inline': (context, game) {
+          final g = game as TicTacToeGame;
+          return Material(
+            color: Colors.transparent,
+            child: Center(
+              child: EditProfileOverlay(
+                game: g,
+                navigateToProfile: false,
+                showAvatars: false,
+              ),
+            ),
+          );
+        },
+        // Claim avatar overlay: shown when a new player returns home after
+        // completing their first match. This presents avatar choices only
+        // and does not navigate to the profile screen after saving.
+        'claim_avatar': (context, game) {
+          final g = game as TicTacToeGame;
+          return Material(
+            color: Colors.transparent,
+            child: Center(
+              child: EditProfileOverlay(
+                game: g,
+                navigateToProfile: false,
+                showAvatars: true,
+              ),
+            ),
+          );
+        },
+        // Flutter-based Auth Gate overlay (shown on top of edit_profile)
+        'auth_gate': (context, game) {
+          final g = game as TicTacToeGame;
+          // Remove any Flame AuthGateComponent so the Flutter overlay isn't stacked
+          try {
+            final existing = List<Component>.from(
+              g.children.whereType<AuthGateComponent>(),
+            );
+            for (final e in existing) {
+              try {
+                e.removeFromParent();
+              } catch (_) {}
+            }
+          } catch (_) {}
+          return Material(
+            color: Colors.transparent,
+            child: Center(
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.84,
+                height: MediaQuery.of(context).size.height * 0.60,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  image: const DecorationImage(
+                    image: AssetImage('assets/images/confirmation_overlay.png'),
+                    fit: BoxFit.contain,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 36),
+                    const Text(
+                      'Sign in so you don\'t lose your progress',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        try {
+                          final helper = AuthHelper();
+
+                          // Start the platform sign-in flow but don't await it here.
+                          // Awaiting the provider flow can block the UI thread while
+                          // the native broker/activity runs — instead listen for the
+                          // resulting auth state change and continue when a user
+                          // appears.
+                          // Start the platform sign-in flow but do not await it here.
+                          // Attach a then() to display a snackbar when the future
+                          // completes to give immediate feedback to the user.
+                          helper
+                              .signInWithGoogle()
+                              .then((cred) {
+                                try {
+                                  if (cred != null) {
+                                    final name =
+                                        cred.user?.displayName ?? 'Player';
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Signed in as $name'),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Sign-in cancelled'),
+                                      ),
+                                    );
+                                  }
+                                } catch (_) {}
+                              })
+                              .catchError((e) {
+                                try {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Sign-in failed'),
+                                    ),
+                                  );
+                                } catch (_) {}
+                              });
+
+                          StreamSubscription<User?>? sub;
+                          sub = FirebaseAuth.instance.authStateChanges().listen(
+                            (user) {
+                              if (user != null) {
+                                try {
+                                  if (g.pendingAuthOnSignedIn != null) {
+                                    g.pendingAuthOnSignedIn!();
+                                    g.pendingAuthOnSignedIn = null;
+                                  }
+                                } catch (_) {}
+                                try {
+                                  sub?.cancel();
+                                } catch (_) {}
+                                try {
+                                  g.overlays.remove('auth_gate');
+                                } catch (_) {}
+                              }
+                            },
+                          );
+
+                          // Failsafe: remove overlay after timeout so the UI
+                          // doesn't remain blocked indefinitely.
+                          Future.delayed(const Duration(seconds: 20), () {
+                            try {
+                              sub?.cancel();
+                            } catch (_) {}
+                            try {
+                              g.overlays.remove('auth_gate');
+                            } catch (_) {}
+                          });
+                        } catch (e) {
+                          try {
+                            g.overlays.remove('auth_gate');
+                          } catch (_) {}
+                        }
+                      },
+                      icon: const Icon(FontAwesomeIcons.google),
+                      label: const Text('Sign in with Google'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF34A853),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.zero,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 2),
+                    TextButton(
+                      onPressed: () => g.overlays.remove('auth_gate'),
+                      child: const Text(
+                        'Maybe later',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

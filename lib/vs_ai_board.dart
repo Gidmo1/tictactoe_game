@@ -4,12 +4,15 @@ import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tictactoe_game/confirmation_overlay.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'overlays/auth_overlay.dart';
 import 'ai.dart';
 import 'models/user.dart' as app_user;
 import 'service/guest_service.dart';
@@ -42,6 +45,10 @@ class TicTacToeVsAI extends Component {
   // Tunable AI delays (ms): aiReactionDelayMs and aiStartDelayMs.
   int aiReactionDelayMs = 500;
   int aiStartDelayMs = 0;
+
+  // Store references to current overlay components so onHome can clean them up
+  EndMatchOverlay? currentEndMatchOverlay;
+  RectangleComponent? currentDimOverlay;
 
   List<List<String>> board = List.generate(3, (_) => List.filled(3, ''));
 
@@ -149,7 +156,7 @@ class TicTacToeVsAI extends Component {
     await applySymbolSettings();
 
     // Settings button
-    add(
+    /*add(
       _PressdownButton(
         imagePath: 'settings.png',
         position: Vector2(340, 760),
@@ -160,6 +167,19 @@ class TicTacToeVsAI extends Component {
             final router = (flameGame as dynamic).router;
             router?.pushNamed('settings');
           }
+        },
+      ),
+    );*/
+
+    // Persistent restart button at bottom center (repeats current level)
+    add(
+      _RestartButton(
+        imagePath: 'restart.png',
+        position: Vector2(canvasSize.x / 2, 760),
+        size: Vector2(80, 80),
+        onPressed: () {
+          // Restart the current board/level without changing currentLevel
+          restartBoard();
         },
       ),
     );
@@ -267,8 +287,18 @@ class TicTacToeVsAI extends Component {
   }
 
   void endRound() {
+    debugPrint('>>> endRound() called, gameOver=$gameOver');
     gameOver = true;
     Future.delayed(const Duration(seconds: 1), () async {
+      debugPrint('>>> endRound delayed callback running');
+      // Mark that the player has completed at least one match so other
+      // flows (avatar claim / sign-in prompts) can trigger on first return
+      // to the home screen.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('completed_first_match', true);
+      } catch (_) {}
+
       String result;
       if (checkForWinner(humanPlayer)) {
         result = "win";
@@ -281,23 +311,127 @@ class TicTacToeVsAI extends Component {
 
       await saveScore(result);
 
+      // Track matches towards periodic progression sign-in prompts for
+      // non-signed-in users. This counter is used to show the Next
+      // sign-in gate every 5 matches (5, 10, 15...). Increment it here
+      // so the onNext handler can decide whether to prompt.
+      try {
+        final prefs2 = await SharedPreferences.getInstance();
+        int c = prefs2.getInt('next_progression_matches_count') ?? 0;
+        c++;
+        await prefs2.setInt('next_progression_matches_count', c);
+      } catch (_) {}
+
+      debugPrint('>>> About to create EndMatchOverlay, result=$result');
       final flameGame = findGame();
       if (flameGame != null) {
+        debugPrint('>>> flameGame found, size=${flameGame.size}');
         final dim = RectangleComponent(
           size: flameGame.size,
           paint: Paint()..color = Colors.black.withOpacity(0.6),
           priority: 1000000000000,
         );
+        debugPrint('>>> Adding dim overlay to flameGame');
         flameGame.add(dim);
+        currentDimOverlay = dim;
 
         final overlay = EndMatchOverlay(
           didWin: result == "win",
           didDraw: result == "draw",
-          showSignInPrompt: false,
+          showSignInPrompt: true,
+          onRestart: () {
+            dim.removeFromParent();
+            restartBoard();
+          },
           onNext: () async {
+            // Only allow progression to next level if player won
+            if (result != "win") {
+              // Player must win to proceed - just restart the same level
+              restartBoard();
+              return;
+            }
+            final prefs = await SharedPreferences.getInstance();
+            final bool completedFirst =
+                prefs.getBool('completed_first_match') ?? false;
+
+            // Only prompt sign-in for progression when the player has
+            // completed their first match and hasn't already been shown
+            // the progression sign-in prompt. Also skip the prompt if a
+            // Firebase user is already signed in.
+            final authUser = await (() async {
+              try {
+                return FirebaseAuth.instance.currentUser;
+              } catch (_) {
+                return null;
+              }
+            })();
+
+            final int nextMatches =
+                prefs.getInt('next_progression_matches_count') ?? 0;
+
+            // Prompt on Next when we've completed at least 1 match and
+            // every 5 matches thereafter (1, 5, 10, 15...) for non-signed-in users.
+            if (completedFirst &&
+                (nextMatches == 1 || nextMatches % 5 == 0) &&
+                authUser == null) {
+              // Close dim before showing auth gate
+              try {
+                dim.removeFromParent();
+              } catch (_) {}
+
+              // Show the sign-in/auth gate without awaiting it. The
+              // provided onSignedIn callback will continue the Next flow
+              // after sign-in completes.
+              try {
+                final gf = findGame();
+                if (gf != null) {
+                  showAuthGate(
+                    gf,
+                    onSignedIn: () async {
+                      currentLevel++;
+                      levelText.text = 'Level $currentLevel';
+                      final prefs2 = await SharedPreferences.getInstance();
+                      await prefs2.setInt('ai_level', currentLevel);
+
+                      // Rotate symbols and persist
+                      humanIsX = !humanIsX;
+                      await prefs2.setBool('human_is_x', humanIsX);
+                      await applySymbolSettings();
+
+                      restartBoard();
+
+                      // Schedule AI move if it should start
+                      try {
+                        if (currentPlayer == aiPlayer && !gameOver) {
+                          if (aiStartDelayMs <= 0) {
+                            Future.microtask(() {
+                              try {
+                                aiMove();
+                              } catch (_) {}
+                            });
+                          } else {
+                            Future.delayed(
+                              Duration(milliseconds: aiStartDelayMs),
+                              () {
+                                try {
+                                  aiMove();
+                                } catch (_) {}
+                              },
+                            );
+                          }
+                        }
+                      } catch (_) {}
+                    },
+                  );
+                }
+              } catch (e) {}
+
+              return;
+            }
+
+            // Normal progression for users who've already completed their first game
             currentLevel++;
             levelText.text = 'Level $currentLevel';
-            final prefs = await SharedPreferences.getInstance();
             await prefs.setInt('ai_level', currentLevel);
 
             // Rotate symbols: flip whether the human is X or O for next level
@@ -328,15 +462,72 @@ class TicTacToeVsAI extends Component {
             } catch (_) {}
           },
           onHome: () {
-            dim.removeFromParent();
+            debugPrint('>>> onHome pressed!');
+            // When the player presses Home, navigate back to menu. If the
+            // player has completed their first match and has not yet been
+            // offered an avatar, navigate to profile screen the first time
+            // they return home so they can pick an avatar.
+            // Ensure any confetti or sound-producing state is stopped.
+            try {
+              confettiRunning = false;
+            } catch (_) {}
+            try {
+              for (var c in List.from(confettiPieces)) {
+                try {
+                  c.removeFromParent();
+                } catch (_) {}
+              }
+            } catch (_) {}
+            try {
+              confettiPieces.clear();
+            } catch (_) {}
+
+            try {
+              currentDimOverlay?.removeFromParent();
+            } catch (_) {}
+            try {
+              currentEndMatchOverlay?.removeFromParent();
+            } catch (_) {}
             restartBoard();
             final router = (flameGame as dynamic).router;
-            router?.pushNamed('menu');
+
+            // Check prefs and navigate to profile to claim avatar if appropriate
+            Future(() async {
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                final chosen = prefs.getString('chosen_avatar') ?? '';
+                final completed =
+                    prefs.getBool('completed_first_match') ?? false;
+                final shown = prefs.getBool('avatar_claim_shown') ?? false;
+                debugPrint(
+                  'onHome: chosen="$chosen" completed=$completed shown=$shown',
+                );
+
+                // For new users (completed first match, no avatar chosen, overlay not yet shown),
+                // navigate to profile screen to claim an avatar
+                if (completed && chosen.isEmpty && !shown) {
+                  await prefs.setBool('avatar_claim_shown', true);
+                  debugPrint('onHome: navigating to profile for avatar claim');
+                  router?.pushNamed('profile');
+                } else {
+                  debugPrint('onHome: navigating to menu');
+                  router?.pushNamed('menu');
+                }
+              } catch (e) {
+                debugPrint('onHome: exception checking prefs: $e');
+                router?.pushNamed('menu');
+              }
+            });
           },
         );
 
         overlay.priority = 1000000000001;
+        debugPrint(
+          '>>> EndMatchOverlay created: didWin=${result == "win"}, didDraw=${result == "draw"}',
+        );
         flameGame.add(overlay);
+        currentEndMatchOverlay = overlay;
+        debugPrint('>>> EndMatchOverlay successfully added to flameGame');
       }
     });
   }
@@ -608,5 +799,43 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
         ),
       ]),
     );
+  }
+}
+
+// Restart button with configurable size for the board scene.
+class _RestartButton extends SpriteComponent with TapCallbacks {
+  final VoidCallback onPressed;
+  final String imagePath;
+
+  _RestartButton({
+    required this.imagePath,
+    required Vector2 position,
+    required Vector2 size,
+    required this.onPressed,
+  }) : super(size: size, position: position, anchor: Anchor.center);
+
+  @override
+  Future<void> onLoad() async {
+    sprite =
+        await (findGame()?.loadSprite(imagePath) ?? Sprite.load(imagePath));
+  }
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
+    add(
+      SequenceEffect([
+        ScaleEffect.to(Vector2(0.92, 0.92), EffectController(duration: 0.05)),
+        ScaleEffect.to(
+          Vector2(1.06, 1.06),
+          EffectController(duration: 0.09, curve: Curves.easeOut),
+        ),
+        ScaleEffect.to(
+          Vector2(1.0, 1.0),
+          EffectController(duration: 0.05, curve: Curves.easeIn),
+        ),
+      ]),
+    );
+    Future.delayed(const Duration(milliseconds: 120), onPressed);
   }
 }

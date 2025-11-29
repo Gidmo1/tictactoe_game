@@ -6,6 +6,7 @@ import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/tictactoe.dart';
+// material import removed (unused after sign-in button removal)
 
 class SettingsScreen extends Component
     with HasGameReference<TicTacToeGame>, TapCallbacks {
@@ -96,7 +97,7 @@ class SettingsScreen extends Component
       _ReturnButton(
         sprite: returnSprite,
         position: Vector2(10, 50),
-        onPressed: () => game.router.pushReplacementNamed('vsai'),
+        onPressed: () => game.router.pushReplacementNamed('menu'),
       ),
     );
 
@@ -126,6 +127,9 @@ class SettingsScreen extends Component
         onPressed: () => game.router.pushNamed('privacy'),
       ),
     );
+
+    // Sign-in button removed: sign-in is now prompted automatically
+    // after a new player's first win (via the end-match overlay Next button).
 
     // Load saved state and sync
     await _loadSoundState();
@@ -274,6 +278,8 @@ class _PrivacySprite extends SpriteComponent with TapCallbacks {
     Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }
+
+// _SignInSprite removed — sign-in is prompted automatically after first win.
 
 class _AdsSprite extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
