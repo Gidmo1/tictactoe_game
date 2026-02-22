@@ -1,5 +1,3 @@
-
-```
 # 🎮 Tic Tac Toe - Play with Everyone!
 
 **A place to play Tic Tac Toe with everyone.**
