@@ -1,6 +1,4 @@
 
-
-```markdown
 # 🎮 Tic Tac Toe - Play with Everyone!
 
 **A place to play Tic Tac Toe with everyone.**
@@ -101,6 +99,5 @@ This project is **proprietary**. You may view the code on GitHub, but you are **
 
 See the [LICENSE](LICENSE) file for full details.
 
-Made with ❤️ by [Gidmo1](https://github.com/Gidmo1)
-```
+Made by [Gidmo1](https://github.com/Gidmo1)
 
