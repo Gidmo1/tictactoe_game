@@ -5,6 +5,7 @@ import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'package:tictactoe_game/board_layout.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,10 +23,11 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
   void mark(String symbol) async {
     markSprite?.removeFromParent();
     final spritePath = symbol == 'X' ? 'X.png' : 'O.png';
+    final pieceSize = Vector2.all(min(size.x, size.y) * 0.75);
     markSprite = SpriteComponent()
       ..sprite =
           await (findGame()?.loadSprite(spritePath) ?? Sprite.load(spritePath))
-      ..size = Vector2(70, 70)
+      ..size = pieceSize
       ..anchor = Anchor.center
       ..position = size / 2;
     add(markSprite!);
@@ -44,10 +46,7 @@ class TicTacToeBoard extends Component {
   late TextComponent messageText;
   bool gameOver = false;
 
-  final double cellWidth = 390 / 3;
-  final double cellHeight = 321 / 3;
-  final double boardX = 4;
-  final double boardY = 318;
+  late final BoardLayout layout;
 
   bool confettiRunning = false;
   final Random random = Random();
@@ -55,7 +54,8 @@ class TicTacToeBoard extends Component {
 
   @override
   Future<void> onLoad() async {
-    final canvasSize = findGame()?.size ?? Vector2(360, 640);
+    final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
+    layout = BoardLayout(canvasSize);
 
     // Background
     final background = SpriteComponent()
@@ -81,10 +81,11 @@ class TicTacToeBoard extends Component {
         }
       }
       if (sprite != null) {
+        final avatarSize = layout.cellHeight * 0.7;
         final profile = SpriteComponent()
           ..sprite = sprite
-          ..size = Vector2(56, 56)
-          ..position = Vector2(20, 40)
+          ..size = Vector2(avatarSize, avatarSize)
+          ..position = Vector2(layout.boardX + 8, layout.boardY - avatarSize - 10)
           ..anchor = Anchor.topLeft;
         add(profile);
       }
@@ -94,9 +95,10 @@ class TicTacToeBoard extends Component {
     }
 
     // Message text
+    final topMessageY = layout.boardY - layout.cellHeight * 0.45;
     messageText = TextComponent(
       text: "Player $currentPlayer's turn",
-      position: Vector2(canvasSize.x / 2, boardY - 80),
+      position: Vector2(canvasSize.x / 2, topMessageY),
       anchor: Anchor.center,
       textRenderer: TextPaint(
         style: const TextStyle(
@@ -109,11 +111,13 @@ class TicTacToeBoard extends Component {
     add(messageText);
 
     // Buttons
+    final buttonSize = layout.cellHeight * 0.45;
+    final topButtonY = max(layout.boardY - layout.cellHeight * 0.55, 64.0);
     add(
       _PressdownButton(
         imagePath: 'return.png',
-        position: Vector2(40, 180),
-        size: Vector2(60, 60),
+        position: Vector2(buttonSize * 0.5 + 20, topButtonY),
+        size: Vector2(buttonSize, buttonSize),
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
@@ -124,11 +128,12 @@ class TicTacToeBoard extends Component {
       ),
     );
 
+    final settingsButtonSize = layout.cellHeight * 0.4;
     add(
       _PressdownButton(
         imagePath: 'settings.png',
-        position: Vector2(canvasSize.x - 50, 70),
-        size: Vector2(40, 40),
+        position: Vector2(canvasSize.x - settingsButtonSize * 0.5 - 20, topButtonY),
+        size: Vector2(settingsButtonSize, settingsButtonSize),
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
@@ -139,11 +144,12 @@ class TicTacToeBoard extends Component {
       ),
     );
 
+    final restartSize = layout.cellHeight * 0.9;
     add(
       _PressdownButton(
         imagePath: 'restart.png',
-        position: Vector2(canvasSize.x / 2, canvasSize.y - 70),
-        size: Vector2(80, 80),
+        position: Vector2(canvasSize.x / 2, canvasSize.y - restartSize * 0.6),
+        size: Vector2(restartSize, restartSize),
         onPressed: restartGame,
       ),
     );
@@ -156,10 +162,10 @@ class TicTacToeBoard extends Component {
             row: row,
             col: col,
             position: Vector2(
-              boardX + col * cellWidth,
-              boardY + row * cellHeight,
+              layout.boardX + col * layout.cellWidth,
+              layout.boardY + row * layout.cellHeight,
             ),
-            size: Vector2(cellWidth, cellHeight),
+            size: Vector2(layout.cellWidth, layout.cellHeight),
           ),
         );
       }
@@ -271,7 +277,7 @@ class TicTacToeBoard extends Component {
     confettiRunning = true;
     print("Confetti has started");
 
-    final size = findGame()?.size ?? Vector2(360, 640);
+    final size = findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
 
     void spawnConfettiPiece() {
       if (!confettiRunning) return;

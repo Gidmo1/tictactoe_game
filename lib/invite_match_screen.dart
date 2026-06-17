@@ -11,6 +11,7 @@ import 'package:tictactoe_game/end_match_overlay.dart';
 import 'components/auth_gate_component.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'package:tictactoe_game/board_layout.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'service/competition_service.dart';
 import 'service/score_service.dart';
@@ -36,10 +37,7 @@ class TicTacToeInviteScreen extends Component {
   Sprite? smallOSprite;
   // removed per-lobby found message; lobby now shows the 'Found opponent' notice
 
-  final double cellWidth = 390 / 3;
-  final double cellHeight = 321 / 3;
-  final double boardX = 4;
-  final double boardY = 318;
+  late final BoardLayout layout;
 
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
   final FirebaseFunctions functions = FirebaseFunctions.instanceFor(
@@ -59,7 +57,8 @@ class TicTacToeInviteScreen extends Component {
     board = List.filled(9, '');
     currentPlayer = 'X';
 
-    final canvasSize = findGame()?.size ?? Vector2(360, 640);
+    final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
+    layout = BoardLayout(canvasSize);
 
     // Background
     final background = SpriteComponent()
@@ -71,9 +70,10 @@ class TicTacToeInviteScreen extends Component {
     add(background);
 
     // Message text
+    final titleY = layout.boardY - layout.cellHeight * 0.5;
     messageText = TextComponent(
       text: "Waiting for opponent...",
-      position: Vector2(canvasSize.x / 2, boardY - 80),
+      position: Vector2(canvasSize.x / 2, titleY),
       anchor: Anchor.center,
       textRenderer: TextPaint(
         style: const TextStyle(
@@ -85,14 +85,20 @@ class TicTacToeInviteScreen extends Component {
     );
     add(messageText);
 
+    final topPadding = max(layout.boardY * 0.06, 32.0);
+    final nameFontSize = layout.screenSize.x * 0.04;
+    final iconSize = layout.screenSize.x * 0.078;
+    final leftNameX = layout.boardX + 10;
+    final rightNameX = canvasSize.x - layout.boardX - 10;
+
     // Player name placeholders (left and right)
     playerXNameText = TextComponent(
       text: '',
-      position: Vector2(20, 40),
+      position: Vector2(leftNameX, topPadding),
       anchor: Anchor.topLeft,
       textRenderer: TextPaint(
-        style: const TextStyle(
-          fontSize: 16,
+        style: TextStyle(
+          fontSize: nameFontSize,
           color: Colors.white,
           fontWeight: FontWeight.w600,
         ),
@@ -102,11 +108,11 @@ class TicTacToeInviteScreen extends Component {
 
     playerONameText = TextComponent(
       text: '',
-      position: Vector2(canvasSize.x - 20, 40),
+      position: Vector2(rightNameX, topPadding),
       anchor: Anchor.topRight,
       textRenderer: TextPaint(
-        style: const TextStyle(
-          fontSize: 16,
+        style: TextStyle(
+          fontSize: nameFontSize,
           color: Colors.white,
           fontWeight: FontWeight.w600,
         ),
@@ -120,9 +126,8 @@ class TicTacToeInviteScreen extends Component {
           await (findGame()?.loadSprite('X.png') ?? Sprite.load('X.png'));
       playerXSymbolSprite = SpriteComponent(
         sprite: smallXSprite,
-        size: Vector2(28, 28),
-        // place the small symbol below the name text (shifted left slightly)
-        position: Vector2(60, 66),
+        size: Vector2(iconSize, iconSize),
+        position: Vector2(leftNameX + iconSize * 0.5, topPadding + nameFontSize * 1.1),
         anchor: Anchor.topLeft,
       )..priority = 10011;
       add(playerXSymbolSprite!);
@@ -133,9 +138,8 @@ class TicTacToeInviteScreen extends Component {
           await (findGame()?.loadSprite('O.png') ?? Sprite.load('O.png'));
       playerOSymbolSprite = SpriteComponent(
         sprite: smallOSprite,
-        size: Vector2(28, 28),
-        // place the small symbol below the name text on the right side
-        position: Vector2(canvasSize.x - 60, 66),
+        size: Vector2(iconSize, iconSize),
+        position: Vector2(rightNameX - iconSize * 1.5, topPadding + nameFontSize * 1.1),
         anchor: Anchor.topLeft,
       )..priority = 10011;
       add(playerOSymbolSprite!);
@@ -149,10 +153,10 @@ class TicTacToeInviteScreen extends Component {
             row: row,
             col: col,
             position: Vector2(
-              boardX + col * cellWidth,
-              boardY + row * cellHeight,
+              layout.boardX + col * layout.cellWidth,
+              layout.boardY + row * layout.cellHeight,
             ),
-            size: Vector2(cellWidth, cellHeight),
+            size: Vector2(layout.cellWidth, layout.cellHeight),
             parentBoard: this,
           ),
         );
@@ -179,11 +183,12 @@ class TicTacToeInviteScreen extends Component {
 
             // Add return button only for non-tournament matches
             if (data['tournament'] != true && !_addedReturnButton) {
+              final buttonSize = layout.cellHeight * 0.45;
               add(
                 _PressdownButton(
                   imagePath: 'return.png',
-                  position: Vector2(40, 180),
-                  size: Vector2(60, 60),
+                  position: Vector2(layout.boardX + buttonSize, layout.boardY - buttonSize * 1.5),
+                  size: Vector2(buttonSize, buttonSize),
                   onPressed: leaveMatch,
                 ),
               );
@@ -203,10 +208,12 @@ class TicTacToeInviteScreen extends Component {
               String poName = '';
               Map<String, dynamic>? pxProfile;
               Map<String, dynamic>? poProfile;
-              if (px != null)
+              if (px != null) {
                 pxName = (px['displayName'] ?? px['name'] ?? '') as String;
-              if (po != null)
+              }
+              if (po != null) {
                 poName = (po['displayName'] ?? po['name'] ?? '') as String;
+              }
               // Prefer persisted profile info if server provided an AI profile
               try {
                 pxProfile = data['playerXProfile'] as Map<String, dynamic>?;
@@ -221,14 +228,18 @@ class TicTacToeInviteScreen extends Component {
                 }
               } catch (_) {}
               // fallback to simple fields
-              if (pxName.isEmpty)
+              if (pxName.isEmpty) {
                 pxName = (data['playerXName'] ?? '') as String;
-              if (poName.isEmpty)
+              }
+              if (poName.isEmpty) {
                 poName = (data['playerOName'] ?? '') as String;
-              if (pxName.isEmpty)
+              }
+              if (pxName.isEmpty) {
                 pxName = playerXUID.isNotEmpty ? playerXUID : 'Player X';
-              if (poName.isEmpty)
+              }
+              if (poName.isEmpty) {
                 poName = playerOUID.isNotEmpty ? playerOUID : 'Player O';
+              }
 
               // Strip any trailing country in parentheses if present (we show
               // country via a flag icon instead).
@@ -249,33 +260,41 @@ class TicTacToeInviteScreen extends Component {
                   playerXNameText.text = pxName;
                   playerONameText.text = poName;
                   // left is X
-                  if (playerXSymbolSprite != null && smallXSprite != null)
+                  if (playerXSymbolSprite != null && smallXSprite != null) {
                     playerXSymbolSprite!.sprite = smallXSprite;
-                  if (playerOSymbolSprite != null && smallOSprite != null)
+                  }
+                  if (playerOSymbolSprite != null && smallOSprite != null) {
                     playerOSymbolSprite!.sprite = smallOSprite;
+                  }
                 } else {
                   playerXNameText.text = poName;
                   playerONameText.text = pxName;
-                  if (playerXSymbolSprite != null && smallOSprite != null)
+                  if (playerXSymbolSprite != null && smallOSprite != null) {
                     playerXSymbolSprite!.sprite = smallOSprite;
-                  if (playerOSymbolSprite != null && smallXSprite != null)
+                  }
+                  if (playerOSymbolSprite != null && smallXSprite != null) {
                     playerOSymbolSprite!.sprite = smallXSprite;
+                  }
                 }
               } else {
                 if (myUID == playerXUID) {
                   playerXNameText.text = pxName;
                   playerONameText.text = poName;
-                  if (playerXSymbolSprite != null && smallXSprite != null)
+                  if (playerXSymbolSprite != null && smallXSprite != null){
                     playerXSymbolSprite!.sprite = smallXSprite;
-                  if (playerOSymbolSprite != null && smallOSprite != null)
+                  }
+                  if (playerOSymbolSprite != null && smallOSprite != null){
+                  }
                     playerOSymbolSprite!.sprite = smallOSprite;
                 } else {
                   playerXNameText.text = poName;
                   playerONameText.text = pxName;
-                  if (playerXSymbolSprite != null && smallOSprite != null)
+                  if (playerXSymbolSprite != null && smallOSprite != null){
                     playerXSymbolSprite!.sprite = smallOSprite;
-                  if (playerOSymbolSprite != null && smallXSprite != null)
+                  }
+                  if (playerOSymbolSprite != null && smallXSprite != null){
                     playerOSymbolSprite!.sprite = smallXSprite;
+                  }
                 }
               }
 
@@ -348,32 +367,38 @@ class TicTacToeInviteScreen extends Component {
                         sp = null;
                       }
                       if (sp != null) {
+                        final flagWidth = layout.screenSize.x * 0.08;
+                        final flagHeight = layout.screenSize.y * 0.03;
+                        final flagTop = topPadding + nameFontSize * 1.1 + 4;
                         if (isLeft) {
                           if (playerXFlagSprite == null) {
                             playerXFlagSprite = SpriteComponent(
                               sprite: sp,
-                              size: Vector2(28, 18),
-                              position: Vector2(140, 44),
+                              size: Vector2(flagWidth, flagHeight),
+                              position: Vector2(leftNameX + flagWidth * 0.5, flagTop),
                               anchor: Anchor.centerLeft,
                             )..priority = 10012;
                             add(playerXFlagSprite!);
                           } else {
-                            playerXFlagSprite!.sprite = sp;
+                            playerXFlagSprite!
+                              ..sprite = sp
+                              ..size = Vector2(flagWidth, flagHeight)
+                              ..position = Vector2(leftNameX + flagWidth * 0.5, flagTop);
                           }
                         } else {
                           if (playerOFlagSprite == null) {
                             playerOFlagSprite = SpriteComponent(
                               sprite: sp,
-                              size: Vector2(28, 18),
-                              position: Vector2(
-                                (findGame()?.size.x ?? 360) - 140,
-                                44,
-                              ),
+                              size: Vector2(flagWidth, flagHeight),
+                              position: Vector2(rightNameX - flagWidth * 0.5, flagTop),
                               anchor: Anchor.centerRight,
                             )..priority = 10012;
                             add(playerOFlagSprite!);
                           } else {
-                            playerOFlagSprite!.sprite = sp;
+                            playerOFlagSprite!
+                              ..sprite = sp
+                              ..size = Vector2(flagWidth, flagHeight)
+                              ..position = Vector2(rightNameX - flagWidth * 0.5, flagTop);
                           }
                         }
                       } else {
@@ -465,10 +490,12 @@ class TicTacToeInviteScreen extends Component {
                     final players = List<String>.from(data['players'] ?? []);
                     // If players array missing, fall back to explicit fields
                     if (players.isEmpty) {
-                      if ((data['playerXUID'] ?? '') != '')
+                      if ((data['playerXUID'] ?? '') != ''){
                         players.add(data['playerXUID']);
-                      if ((data['playerOUID'] ?? '') != '')
+                      }
+                      if ((data['playerOUID'] ?? '') != '') {
                         players.add(data['playerOUID']);
+                      }
                     }
                     // Award results: winner -> win, others -> loss; draw -> draw for all
                     if (winnerUID == '') {
@@ -704,7 +731,7 @@ class TicTacToeInviteScreen extends Component {
 
         // Create dim if needed
         dim ??= RectangleComponent(
-          size: flameGame.size ?? Vector2(360, 640),
+          size: flameGame.size ?? BoardLayout.defaultScreenSize,
           paint: Paint()..color = Colors.black.withOpacity(0.6),
           priority: 1000000000000,
         );
@@ -823,11 +850,13 @@ class TicTacToeInviteScreen extends Component {
                     .isNotEmpty;
                 if (!present) {
                   try {
-                    if (dim != null && !flameGame.children.contains(dim))
+                    if (dim != null && !flameGame.children.contains(dim)) {
                       flameGame.add(dim);
+                    }
                     if (overlay != null &&
-                        !flameGame.children.contains(overlay))
+                        !flameGame.children.contains(overlay)) {
                       flameGame.add(overlay);
+                    }
                   } catch (_) {}
                 }
               } catch (_) {
@@ -851,7 +880,7 @@ class TicTacToeInviteScreen extends Component {
     try {
       if (flameGame.children.whereType<EndMatchOverlay>().isNotEmpty) return;
       final finalDim = RectangleComponent(
-        size: flameGame.size ?? Vector2(360, 640),
+        size: flameGame.size ?? BoardLayout.defaultScreenSize,
         paint: Paint()..color = Colors.black.withOpacity(0.6),
         priority: 1000000000000,
       );
@@ -915,8 +944,9 @@ class TicTacToeInviteScreen extends Component {
         )) {
           try {
             // remove dims with the same opacity heuristic
-            if ((r as RectangleComponent).paint.color.opacity == 0.6)
+            if ((r as RectangleComponent).paint.color.opacity == 0.6) {
               r.removeFromParent();
+            }
           } catch (_) {}
         }
       } catch (_) {}
@@ -930,7 +960,7 @@ class TicTacToeInviteScreen extends Component {
     if (confettiRunning) return;
     confettiRunning = true;
 
-    final size = findGame()?.size ?? Vector2(360, 640);
+    final size = findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
 
     void spawnConfettiPiece() {
       if (!confettiRunning) return;
@@ -1007,9 +1037,10 @@ class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
     // symbol may be 'X'/'O' or a player UID; map UIDs to X/O using parentBoard stored ids
     String sym = symbol;
     if (symbol != 'X' && symbol != 'O') {
-      if (symbol == parentBoard.playerXUID)
+      if (symbol == parentBoard.playerXUID) {
         sym = 'X';
-      else if (symbol == parentBoard.playerOUID)
+      } else if (symbol == parentBoard.playerOUID)
+        // ignore: curly_braces_in_flow_control_structures
         sym = 'O';
       else {
         // unknown symbol, ignore
@@ -1018,9 +1049,10 @@ class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
     }
 
     markSprite?.removeFromParent();
+    final markSize = Vector2.all(min(size.x, size.y) * 0.75);
     markSprite = SpriteComponent()
       ..sprite = await Sprite.load(sym == 'X' ? 'X.png' : 'O.png')
-      ..size = Vector2(70, 70)
+      ..size = markSize
       ..position = size / 2
       ..anchor = Anchor.center;
     add(markSprite!);

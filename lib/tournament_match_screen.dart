@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:tictactoe_game/board_layout.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'service/competition_service.dart';
 
@@ -20,7 +21,7 @@ class TournamentMatchScreen extends Component {
 
   @override
   Future<void> onLoad() async {
-    final canvasSize = findGame()?.size ?? Vector2(360, 640);
+    final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
 
     // Handle Competition to Tournament auto-search flag
     final flameGame = findGame();
@@ -155,10 +156,11 @@ class TournamentMatchScreen extends Component {
               if (dataMap.containsKey('youAre') &&
                   dataMap['youAre'] is String) {
                 final raw = (dataMap['youAre'] as String).trim();
-                if (raw.toLowerCase().contains('o'))
+                if (raw.toLowerCase().contains('o')) {
                   g.myPlayerSymbol = 'O';
-                else
+                } else {
                   g.myPlayerSymbol = 'X';
+                }
               } else {
                 g.myPlayerSymbol = 'X';
               }
@@ -176,7 +178,7 @@ class TournamentMatchScreen extends Component {
             _lastError = e.toString();
             statusText.text = 'Matchmaking error. Retrying...';
             detailText.text =
-                'Attempts: $_attempts • Last error: ${_lastError.length > 120 ? _lastError.substring(0, 120) + '...' : _lastError}';
+                'Attempts: $_attempts • Last error: ${_lastError.length > 120 ? '${_lastError.substring(0, 120)}...' : _lastError}';
             debugPrint('Matchmaking error: $e');
             // Wait a little before retrying; if the randomized fallback
             // time has elapsed, attempt the AI creation as a fallback.

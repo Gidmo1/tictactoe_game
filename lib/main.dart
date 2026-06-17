@@ -659,7 +659,7 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
                           } catch (_) {}
                         }
                       },
-                      icon: const Icon(FontAwesomeIcons.google),
+                      icon: FaIcon(FontAwesomeIcons.google),
                       label: const Text('Sign in with Google'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF34A853),

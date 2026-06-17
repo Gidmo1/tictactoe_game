@@ -7,6 +7,7 @@ import 'package:tictactoe_game/tictactoe.dart';
 import 'package:tictactoe_game/service/auth_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+
 typedef OnSignedIn = void Function();
 
 class AuthGateComponent extends PositionComponent
@@ -292,7 +293,7 @@ class AuthGateComponent extends PositionComponent
 class _TapButton extends PositionComponent with TapCallbacks {
   final Paint paint;
   final String label;
-  final material.IconData icon;
+  final dynamic icon;
   final Future<void> Function() onPressed;
 
   _TapButton({

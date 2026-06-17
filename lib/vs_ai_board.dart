@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tictactoe_game/confirmation_overlay.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'package:tictactoe_game/board_layout.dart';
 import 'overlays/auth_overlay.dart';
 import 'ai.dart';
 import 'models/user.dart' as app_user;
@@ -26,10 +27,7 @@ class TicTacToeVsAI extends Component {
   bool humanIsX = true;
   bool gameOver = false;
 
-  final double cellWidth = 390 / 3;
-  final double cellHeight = 321 / 3;
-  final double boardX = 4;
-  final double boardY = 318;
+  late final BoardLayout layout;
   app_user.User loggedInUser;
 
   late TicTacToeAI ai;
@@ -65,7 +63,8 @@ class TicTacToeVsAI extends Component {
   @override
   Future<void> onLoad() async {
     ai = TicTacToeAI();
-    final canvasSize = findGame()?.size ?? Vector2(360, 640);
+    final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
+    layout = BoardLayout(canvasSize);
 
     // Load AI difficulty from local prefs
     try {
@@ -90,19 +89,24 @@ class TicTacToeVsAI extends Component {
         ..position = Vector2.zero();
       add(background);
 
-      final iconSize = 40.0;
+      final iconSize = layout.cellHeight * 0.4;
+      final topBarY = max(layout.boardY - layout.cellHeight * 0.5, 64.0);
+      final leftIconX = layout.boardX + 20;
+      final rightIconX = canvasSize.x - (layout.boardX + iconSize + 20);
+      final centerX = canvasSize.x / 2;
+
       humanIcon = SpriteComponent()
         ..size = Vector2(iconSize, iconSize)
-        ..position = Vector2(60, 50);
+        ..position = Vector2(leftIconX, topBarY);
       add(humanIcon);
       aiIcon = SpriteComponent()
         ..size = Vector2(iconSize, iconSize)
-        ..position = Vector2(canvasSize.x - 100, 50);
+        ..position = Vector2(rightIconX, topBarY);
       add(aiIcon);
 
       levelText = TextComponent(
         text: 'Level $currentLevel',
-        position: Vector2(canvasSize.x / 2, 50),
+        position: Vector2(centerX, topBarY),
         anchor: Anchor.center,
         textRenderer: TextPaint(
           style: const TextStyle(
@@ -119,7 +123,7 @@ class TicTacToeVsAI extends Component {
 
       scoreText = TextComponent(
         text: "",
-        position: Vector2(canvasSize.x / 2, 60),
+        position: Vector2(centerX, topBarY + layout.cellHeight * 0.12),
         anchor: Anchor.center,
         textRenderer: TextPaint(
           style: const TextStyle(
@@ -137,7 +141,7 @@ class TicTacToeVsAI extends Component {
       add(
         TextComponent(
           text: 'Error loading VS Computer screen.',
-          position: Vector2(180, 320),
+          position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
           anchor: Anchor.center,
           textRenderer: TextPaint(
             style: const TextStyle(fontSize: 24, color: Colors.redAccent),
@@ -155,12 +159,13 @@ class TicTacToeVsAI extends Component {
     }
     await applySymbolSettings();
 
-    // Settings button
-    /*add(
+    final topButtonY = max(layout.boardY - layout.cellHeight * 0.55, 64.0);
+    final settingsSize = layout.cellHeight * 0.4;
+    add(
       _PressdownButton(
         imagePath: 'settings.png',
-        position: Vector2(340, 760),
-        size: Vector2(40, 40),
+        position: Vector2(canvasSize.x - settingsSize * 0.5 - 20, topButtonY),
+        size: Vector2(settingsSize, settingsSize),
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
@@ -169,14 +174,15 @@ class TicTacToeVsAI extends Component {
           }
         },
       ),
-    );*/
+    );
 
     // Persistent restart button at bottom center (repeats current level)
+    final restartSize = layout.cellHeight * 0.9;
     add(
       _RestartButton(
         imagePath: 'restart.png',
-        position: Vector2(canvasSize.x / 2, 760),
-        size: Vector2(80, 80),
+        position: Vector2(canvasSize.x / 2, canvasSize.y - restartSize * 0.6),
+        size: Vector2(restartSize, restartSize),
         onPressed: () {
           // Restart the current board/level without changing currentLevel
           restartBoard();
@@ -185,11 +191,12 @@ class TicTacToeVsAI extends Component {
     );
 
     // Return button
+    final returnSize = layout.cellHeight * 0.45;
     add(
       _PressdownButton(
         imagePath: 'return.png',
-        position: Vector2(40, 180),
-        size: Vector2(60, 60),
+        position: Vector2(returnSize * 0.5 + 20, topButtonY),
+        size: Vector2(returnSize, returnSize),
         onPressed: () async {
           final flameGame = findGame();
           if (flameGame == null) return;
@@ -236,10 +243,10 @@ class TicTacToeVsAI extends Component {
             row: row,
             col: col,
             position: Vector2(
-              boardX + col * cellWidth,
-              boardY + row * cellHeight,
+              layout.boardX + col * layout.cellWidth,
+              layout.boardY + row * layout.cellHeight,
             ),
-            size: Vector2(cellWidth, cellHeight),
+            size: Vector2(layout.cellWidth, layout.cellHeight),
           ),
         );
       }
@@ -608,7 +615,7 @@ class TicTacToeVsAI extends Component {
   void _startConfetti() {
     if (confettiRunning) return;
     confettiRunning = true;
-    final size = findGame()?.size ?? Vector2(360, 640);
+    final size = findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
 
     void spawnPiece() {
       if (!confettiRunning) return;
@@ -752,11 +759,12 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 
   void mark(String player) async {
     markSprite?.removeFromParent();
+    final markSize = Vector2.all(min(size.x, size.y) * 0.75);
     markSprite = SpriteComponent(
       sprite:
           await (findGame()?.loadSprite(player == 'X' ? 'X.png' : 'O.png') ??
               Sprite.load(player == 'X' ? 'X.png' : 'O.png')),
-      size: Vector2(70, 70),
+      size: markSize,
       anchor: Anchor.center,
       position: size / 2,
     );
