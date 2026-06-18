@@ -90,18 +90,21 @@ class TicTacToeVsAI extends Component {
       add(background);
 
       final iconSize = layout.cellHeight * 0.4;
-      final topBarY = max(layout.boardY - layout.cellHeight * 0.5, 64.0);
+      // Center the icons vertically in the space between top (0) and board top (layout.boardY)
+      final topBarY = layout.boardY / 2;
       final leftIconX = layout.boardX + 20;
       final rightIconX = canvasSize.x - (layout.boardX + iconSize + 20);
       final centerX = canvasSize.x / 2;
 
       humanIcon = SpriteComponent()
         ..size = Vector2(iconSize, iconSize)
-        ..position = Vector2(leftIconX, topBarY);
+        ..position = Vector2(leftIconX, topBarY)
+        ..anchor = Anchor.center;
       add(humanIcon);
       aiIcon = SpriteComponent()
         ..size = Vector2(iconSize, iconSize)
-        ..position = Vector2(rightIconX, topBarY);
+        ..position = Vector2(rightIconX, topBarY)
+        ..anchor = Anchor.center;
       add(aiIcon);
 
       levelText = TextComponent(
@@ -159,7 +162,8 @@ class TicTacToeVsAI extends Component {
     }
     await applySymbolSettings();
 
-    final topButtonY = max(layout.boardY - layout.cellHeight * 0.55, 64.0);
+    // Center buttons vertically in the same space as icons
+    final topButtonY = layout.boardY / 2;
     final settingsSize = layout.cellHeight * 0.4;
     add(
       _PressdownButton(
@@ -496,7 +500,7 @@ class TicTacToeVsAI extends Component {
               currentEndMatchOverlay?.removeFromParent();
             } catch (_) {}
             restartBoard();
-            final router = (flameGame as dynamic).router;
+            final router = (findGame() as dynamic).router;
 
             // Check prefs and navigate to profile to claim avatar if appropriate
             Future(() async {
