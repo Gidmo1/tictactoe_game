@@ -90,8 +90,8 @@ class TicTacToeVsAI extends Component {
       add(background);
 
       final iconSize = layout.cellHeight * 0.4;
-      // Center the icons vertically in the space between top (0) and board top (layout.boardY)
-      final topBarY = layout.boardY / 2;
+      // Position icons at 25% down from screen top (well above the board)
+      final topBarY = canvasSize.y * 0.15;
       final leftIconX = layout.boardX + 20;
       final rightIconX = canvasSize.x - (layout.boardX + iconSize + 20);
       final centerX = canvasSize.x / 2;
@@ -162,8 +162,8 @@ class TicTacToeVsAI extends Component {
     }
     await applySymbolSettings();
 
-    // Center buttons vertically in the same space as icons
-    final topButtonY = layout.boardY / 2;
+    // Position buttons at same height as icons (15% down)
+    final topButtonY = canvasSize.y * 0.15;
     final settingsSize = layout.cellHeight * 0.4;
     add(
       _PressdownButton(
