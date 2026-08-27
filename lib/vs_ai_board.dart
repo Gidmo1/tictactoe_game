@@ -13,6 +13,10 @@ import 'package:tictactoe_game/confirmation_overlay.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/board_layout.dart';
+import 'package:tictactoe_game/components/button.dart';
+import 'package:tictactoe_game/game_themes/theme.dart';
+import 'package:tictactoe_game/game_themes/theme_board.dart';
+import 'package:tictactoe_game/game_themes/theme_store.dart';
 import 'overlays/auth_overlay.dart';
 import 'ai.dart';
 import 'models/user.dart' as app_user;
@@ -43,6 +47,9 @@ class TicTacToeVsAI extends Component {
   // Tunable AI delays (ms): aiReactionDelayMs and aiStartDelayMs.
   int aiReactionDelayMs = 500;
   int aiStartDelayMs = 0;
+
+  // Active theme (symbols + skin) read from the sync global cache.
+  GameTheme theme = GameThemes.classic;
 
   // Store references to current overlay components so onHome can clean them up
   EndMatchOverlay? currentEndMatchOverlay;
@@ -79,16 +86,18 @@ class TicTacToeVsAI extends Component {
       currentLevel = 1;
     }
 
-    // Load background and UI
-    try {
-      final background = SpriteComponent()
-        ..sprite =
-            await (findGame()?.loadSprite('playscreen.png') ??
-                Sprite.load('playscreen.png'))
-        ..size = canvasSize
-        ..position = Vector2.zero();
-      add(background);
+    theme = ThemeStore.current;
 
+    // Background + board (themed solid + themed grid)
+    add(RectangleComponent(
+      size: canvasSize, position: Vector2.zero(),
+      paint: Paint()..color = theme.boardBackground,
+    ));
+    for (final piece in themedBoardComponents(layout, theme)) {
+      add(piece);
+    }
+
+    try {
       final iconSize = layout.cellHeight * 0.4;
       // Position icons at 25% down from screen top (well above the board)
       final topBarY = canvasSize.y * 0.15;
@@ -162,14 +171,14 @@ class TicTacToeVsAI extends Component {
     }
     await applySymbolSettings();
 
-    // Position buttons at same height as icons (15% down)
-    final topButtonY = canvasSize.y * 0.15;
-    final settingsSize = layout.cellHeight * 0.4;
+    // Position themed button chips at top corners (above icons)
+    final topButtonY = canvasSize.y * 0.06;
     add(
-      _PressdownButton(
-        imagePath: 'settings.png',
-        position: Vector2(canvasSize.x - settingsSize * 0.5 - 20, topButtonY),
-        size: Vector2(settingsSize, settingsSize),
+      ButtonComponent(
+        label: 'SETTINGS',
+        position: Vector2(canvasSize.x - 76, topButtonY),
+        size: Vector2(72, 34),
+        theme: theme,
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
@@ -180,13 +189,14 @@ class TicTacToeVsAI extends Component {
       ),
     );
 
-    // Persistent restart button at bottom center (repeats current level)
+    // Restart button at bottom center (repeats current level)
     final restartSize = layout.cellHeight * 0.9;
     add(
-      _RestartButton(
-        imagePath: 'restart.png',
+      ButtonComponent(
+        label: 'RESTART',
         position: Vector2(canvasSize.x / 2, canvasSize.y - restartSize * 0.6),
-        size: Vector2(restartSize, restartSize),
+        size: Vector2(120, 40),
+        theme: theme,
         onPressed: () {
           // Restart the current board/level without changing currentLevel
           restartBoard();
@@ -194,26 +204,27 @@ class TicTacToeVsAI extends Component {
       ),
     );
 
-    // Return button
-    final returnSize = layout.cellHeight * 0.45;
+    // Back button
     add(
-      _PressdownButton(
-        imagePath: 'return.png',
-        position: Vector2(returnSize * 0.5 + 20, topButtonY),
-        size: Vector2(returnSize, returnSize),
+      ButtonComponent(
+        label: 'BACK',
+        position: Vector2(76, topButtonY),
+        size: Vector2(72, 34),
+        theme: theme,
         onPressed: () async {
           final flameGame = findGame();
           if (flameGame == null) return;
 
           final dim = RectangleComponent(
             size: flameGame.size,
-            paint: Paint()..color = Colors.black.withOpacity(0.6),
+            paint: Paint()..color = Colors.black.withValues(alpha: 0.6),
             priority: 1000000000000,
           );
           flameGame.add(dim);
 
           late ConfirmationOverlay overlay;
           overlay = ConfirmationOverlay(
+            theme: theme,
             onYes: () {
               // close overlay first
               overlay.removeFromParent();
@@ -347,6 +358,7 @@ class TicTacToeVsAI extends Component {
         currentDimOverlay = dim;
 
         final overlay = EndMatchOverlay(
+          theme: theme,
           didWin: result == "win",
           didDraw: result == "draw",
           showSignInPrompt: true,
@@ -723,16 +735,10 @@ class TicTacToeVsAI extends Component {
   Future<void> applySymbolSettings() async {
     humanPlayer = humanIsX ? 'X' : 'O';
     aiPlayer = humanIsX ? 'O' : 'X';
-    // Load appropriate sprites for the icons
+    // Render themed symbol sprites for the header icons
     try {
-      humanIcon.sprite =
-          await (findGame()?.loadSprite(
-                humanPlayer == 'X' ? 'X.png' : 'O.png',
-              ) ??
-              Sprite.load(humanPlayer == 'X' ? 'X.png' : 'O.png'));
-      aiIcon.sprite =
-          await (findGame()?.loadSprite(aiPlayer == 'X' ? 'X.png' : 'O.png') ??
-              Sprite.load(aiPlayer == 'X' ? 'X.png' : 'O.png'));
+      humanIcon.sprite = await theme.symbolSprite(humanPlayer, humanIcon.size.x);
+      aiIcon.sprite = await theme.symbolSprite(aiPlayer, aiIcon.size.x);
     } catch (_) {}
     // Ensure the human always starts. This keeps symbol rotation (humanIsX)
     // but guarantees the human is the first to move each round.
@@ -764,90 +770,13 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
   void mark(String player) async {
     markSprite?.removeFromParent();
     final markSize = Vector2.all(min(size.x, size.y) * 0.75);
+    final board = parent as TicTacToeVsAI;
     markSprite = SpriteComponent(
-      sprite:
-          await (findGame()?.loadSprite(player == 'X' ? 'X.png' : 'O.png') ??
-              Sprite.load(player == 'X' ? 'X.png' : 'O.png')),
+      sprite: await board.theme.symbolSprite(player, markSize.x),
       size: markSize,
       anchor: Anchor.center,
       position: size / 2,
     );
     add(markSprite!);
-  }
-}
-
-class _PressdownButton extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  final String imagePath;
-  _PressdownButton({
-    required this.imagePath,
-    required Vector2 position,
-    required Vector2 size,
-    required this.onPressed,
-  }) : super(size: size, position: position, anchor: Anchor.center);
-
-  @override
-  Future<void> onLoad() async => sprite =
-      await (findGame()?.loadSprite(imagePath) ?? Sprite.load(imagePath));
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    _bounceEffect();
-    Future.delayed(const Duration(milliseconds: 120), onPressed);
-  }
-
-  void _bounceEffect() {
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.04)),
-        ScaleEffect.to(
-          Vector2(1.05, 1.05),
-          EffectController(duration: 0.08, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
-  }
-}
-
-// Restart button with configurable size for the board scene.
-class _RestartButton extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  final String imagePath;
-
-  _RestartButton({
-    required this.imagePath,
-    required Vector2 position,
-    required Vector2 size,
-    required this.onPressed,
-  }) : super(size: size, position: position, anchor: Anchor.center);
-
-  @override
-  Future<void> onLoad() async {
-    sprite =
-        await (findGame()?.loadSprite(imagePath) ?? Sprite.load(imagePath));
-  }
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.92, 0.92), EffectController(duration: 0.05)),
-        ScaleEffect.to(
-          Vector2(1.06, 1.06),
-          EffectController(duration: 0.09, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
-    Future.delayed(const Duration(milliseconds: 120), onPressed);
   }
 }

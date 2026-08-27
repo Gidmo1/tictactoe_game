@@ -1,60 +1,81 @@
-// settings are stored locally only
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tictactoe_game/components/button.dart';
+import 'package:tictactoe_game/game_themes/theme.dart';
+import 'package:tictactoe_game/game_themes/theme_store.dart';
 import 'package:tictactoe_game/tictactoe.dart';
-// material import removed (unused after sign-in button removal)
 
 class SettingsScreen extends Component
     with HasGameReference<TicTacToeGame>, TapCallbacks {
   static bool buttonSoundOn = true;
   static bool gameSoundOn = true;
-  // no cloud sync; settings are local only
 
-  // Sprites
   late Sprite toggleRightSprite;
   late Sprite toggleLeftSprite;
   late Sprite toggleRightBgSprite;
   late Sprite toggleLeftBgSprite;
 
-  // Components
   late SpriteComponent toggleBg;
   late _SoundToggleButton toggleButton;
+  GameTheme get theme => ThemeStore.current;
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // Load sprites
     toggleRightSprite = await game.loadSprite('toggle_right.png');
     toggleLeftSprite = await game.loadSprite('toggle_left.png');
     toggleRightBgSprite = await game.loadSprite('toggle_rightb.png');
     toggleLeftBgSprite = await game.loadSprite('toggle_leftb.png');
 
-    // Background
-    final bgSprite = await game.loadSprite('background.png');
     add(
-      SpriteComponent(
-        sprite: bgSprite,
+      RectangleComponent(
         size: game.size,
         position: Vector2.zero(),
+        paint: Paint()..color = theme.boardBackground,
       ),
     );
 
-    // Settings background
-    final panelSprite = await game.loadSprite('settings_page.png');
     add(
-      SpriteComponent(
-        sprite: panelSprite,
+      RectangleComponent(
         size: Vector2(370, 410),
         position: Vector2(6, 120),
+        paint: Paint()..color = theme.contrastColor.withValues(alpha: 0.2),
       ),
     );
 
-    // Toggle Background
+    add(
+      TextComponent(
+        text: 'SETTINGS',
+        anchor: Anchor.topCenter,
+        position: Vector2(game.size.x / 2, 20),
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: theme.contrastColor,
+            fontSize: 28,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+    add(
+      TextComponent(
+        text: 'Sound',
+        anchor: Anchor.centerLeft,
+        position: Vector2(30, 175),
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: theme.contrastColor,
+            fontSize: 18,
+          ),
+        ),
+      ),
+    );
+
     toggleBg = SpriteComponent(
       size: Vector2(60, 30),
       position: Vector2(305, 175),
@@ -62,7 +83,6 @@ class SettingsScreen extends Component
     );
     add(toggleBg);
 
-    // Toggle button
     toggleButton = _SoundToggleButton(
       leftSprite: toggleLeftSprite,
       rightSprite: toggleRightSprite,
@@ -91,78 +111,69 @@ class SettingsScreen extends Component
     );
     add(toggleButton);
 
-    // Buttons
-    final returnSprite = await game.loadSprite('return.png');
     add(
-      _ReturnButton(
-        sprite: returnSprite,
+      ButtonComponent(
+        label: 'BACK',
         position: Vector2(10, 50),
+        size: Vector2(80, 40),
+        theme: theme,
         onPressed: () => game.router.pushReplacementNamed('menu'),
       ),
     );
 
-    final resetSprite = await game.loadSprite('reset.png');
     add(
-      _ResetSprite(
-        sprite: resetSprite,
+      ButtonComponent(
+        label: 'RESET',
         position: Vector2(210, 200),
+        size: Vector2(130, 40),
+        theme: theme,
         onPressed: () {},
       ),
     );
 
-    final adsSprite = await game.loadSprite('remove_ads.png');
     add(
-      _AdsSprite(
-        sprite: adsSprite,
+      ButtonComponent(
+        label: 'REMOVE ADS',
         position: Vector2(210, 250),
+        size: Vector2(130, 40),
+        theme: theme,
         onPressed: () {},
       ),
     );
 
-    final privacySprite = await game.loadSprite('privacy_edit.png');
     add(
-      _PrivacySprite(
-        sprite: privacySprite,
+      ButtonComponent(
+        label: 'PRIVACY',
         position: Vector2(210, 300),
+        size: Vector2(130, 40),
+        theme: theme,
         onPressed: () => game.router.pushNamed('privacy'),
       ),
     );
 
-    // Sign-in button removed: sign-in is now prompted automatically
-    // after a new player's first win (via the end-match overlay Next button).
-
-    // Load saved state and sync
     await _loadSoundState();
   }
-
   Future<void> _loadSoundState() async {
     final prefs = await SharedPreferences.getInstance();
     buttonSoundOn = prefs.getBool('buttonSoundOn') ?? true;
     gameSoundOn = prefs.getBool('gameSoundOn') ?? true;
 
-    // Update toggle position and sprite immediately
     toggleBg.sprite = buttonSoundOn ? toggleRightBgSprite : toggleLeftBgSprite;
     toggleButton.soundOn = buttonSoundOn;
     double bgMin = toggleButton.minX + toggleButton.radius;
     double bgMax = toggleButton.maxX - toggleButton.radius;
     toggleButton.position.x = buttonSoundOn ? bgMax : bgMin;
-    toggleButton.sprite = buttonSoundOn
-        ? toggleButton.rightSprite
-        : toggleButton.leftSprite;
-
-    // we only load from shared prefs to keep startup fast
+    toggleButton.sprite =
+        buttonSoundOn ? toggleButton.rightSprite : toggleButton.leftSprite;
   }
 
   Future<void> _saveSoundState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('buttonSoundOn', buttonSoundOn);
     await prefs.setBool('gameSoundOn', gameSoundOn);
-
-    // we no longer sync settings to the cloud
   }
 }
 
-// Toggle Button
 class _SoundToggleButton extends SpriteComponent with TapCallbacks {
   final double minX;
   final double maxX;
@@ -185,11 +196,11 @@ class _SoundToggleButton extends SpriteComponent with TapCallbacks {
     required this.soundOn,
     required this.onChanged,
   }) : super(
-         position: position,
-         size: size,
-         anchor: Anchor.center,
-         sprite: soundOn ? rightSprite : leftSprite,
-       );
+          position: position,
+          size: size,
+          anchor: Anchor.center,
+          sprite: soundOn ? rightSprite : leftSprite,
+        );
 
   double get radius => size.x / 2;
 
@@ -219,120 +230,5 @@ class _SoundToggleButton extends SpriteComponent with TapCallbacks {
 
     sprite = soundOn ? rightSprite : leftSprite;
     await onChanged(soundOn);
-  }
-}
-
-// Remaining buttons
-class _ResetSprite extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  _ResetSprite({
-    required Sprite sprite,
-    required Vector2 position,
-    required this.onPressed,
-  }) : super(sprite: sprite, size: Vector2(130, 40), position: position);
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
-        ScaleEffect.to(
-          Vector2(1.05, 1.05),
-          EffectController(duration: 0.08, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
-    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
-  }
-}
-
-class _PrivacySprite extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  _PrivacySprite({
-    required Sprite sprite,
-    required Vector2 position,
-    required this.onPressed,
-  }) : super(sprite: sprite, size: Vector2(130, 40), position: position);
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
-        ScaleEffect.to(
-          Vector2(1.05, 1.05),
-          EffectController(duration: 0.08, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
-    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
-  }
-}
-
-// _SignInSprite removed — sign-in is prompted automatically after first win.
-
-class _AdsSprite extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  _AdsSprite({
-    required Sprite sprite,
-    required Vector2 position,
-    required this.onPressed,
-  }) : super(sprite: sprite, size: Vector2(130, 40), position: position);
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
-        ScaleEffect.to(
-          Vector2(1.05, 1.05),
-          EffectController(duration: 0.08, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
-    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
-  }
-}
-
-class _ReturnButton extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  _ReturnButton({
-    required Sprite sprite,
-    required Vector2 position,
-    required this.onPressed,
-  }) : super(sprite: sprite, size: Vector2(50, 50), position: position);
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
-        ScaleEffect.to(
-          Vector2(1.05, 1.05),
-          EffectController(duration: 0.08, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
-    Future.delayed(const Duration(milliseconds: 150), () => onPressed());
   }
 }

@@ -30,6 +30,7 @@ dependencies:
   android_intent_plus: ^6.0.0
   share_plus: ^12.0.1
   uuid: ^3.0.7
+  path: ^1.9.0
 
   
 
@@ -46,13 +47,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/X.png
-    - assets/images/O.png
     - assets/images/empty.png
     - assets/images/play.png
     - assets/images/background.png
-    - assets/images/playscreen_36.png
-    - assets/images/playscreen_81.png
     - assets/images/settings.png
     - assets/images/restart.png
     - assets/images/return.png
@@ -62,8 +59,6 @@ flutter:
     - assets/images/no.png
     - assets/images/toggle_leftb.png
     - assets/images/toggle_rightb.png
-    - assets/images/playscreen.png
-    - assets/images/competition.png
     - assets/images/toggle_left.png
     - assets/images/trophy_gold.png
     - assets/images/trophy_silver.png
@@ -77,7 +72,6 @@ flutter:
     - assets/images/david.png
     - assets/images/piper.png
     - assets/images/andrew.png
-    - assets/images/confetti.png
     - assets/images/toggle_right.png
     - assets/images/join_match.png
     - assets/images/settings_page.png
@@ -101,8 +95,6 @@ flutter:
     - assets/images/home.png
     - assets/images/next.png
     - assets/images/profile.png
-    - assets/images/vsfriend.png
-    - assets/images/vscomputer.png
     - assets/images/account_deletion.png
     - assets/images/data_access_request.png
     - assets/images/privacy_policy.png

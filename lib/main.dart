@@ -14,6 +14,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'service/guest_service.dart';
 import 'settings_screen.dart';
 import 'package:flame/flame.dart';
+import 'package:tictactoe_game/game_themes/theme_store.dart';
+
 import 'service/auth_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'overlays/edit_profile.dart';
@@ -67,6 +69,7 @@ void main() async {
     await _tryLoad('images/$name');
   }
 
+  await ThemeStore.init();
   runApp(const MyApp());
 }
 

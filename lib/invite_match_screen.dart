@@ -8,6 +8,7 @@ import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
+import 'package:tictactoe_game/game_themes/theme_store.dart';
 import 'components/auth_gate_component.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
@@ -739,6 +740,7 @@ class TicTacToeInviteScreen extends Component {
         if (!flameGame.children.contains(dim)) flameGame.add(dim);
 
         overlay ??= EndMatchOverlay(
+          theme: ThemeStore.current,
           didWin: didWin,
           didDraw: didDraw,
           overrideMessage: overrideMessage,
@@ -886,6 +888,7 @@ class TicTacToeInviteScreen extends Component {
       );
       flameGame.add(finalDim);
       final finalOverlay = EndMatchOverlay(
+        theme: ThemeStore.current,
         didWin: didWin,
         didDraw: didDraw,
         overrideMessage: overrideMessage,

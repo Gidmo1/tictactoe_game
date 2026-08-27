@@ -6,7 +6,11 @@ import 'package:flame/events.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/board_layout.dart';
+import 'package:tictactoe_game/components/button.dart';
 import 'package:tictactoe_game/settings_screen.dart';
+import 'package:tictactoe_game/game_themes/theme.dart';
+import 'package:tictactoe_game/game_themes/theme_board.dart';
+import 'package:tictactoe_game/game_themes/theme_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class TicTacToeCell extends PositionComponent with TapCallbacks {
@@ -22,14 +26,14 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
 
   void mark(String symbol) async {
     markSprite?.removeFromParent();
-    final spritePath = symbol == 'X' ? 'X.png' : 'O.png';
+    final theme = (parent as TicTacToeBoard).theme;
     final pieceSize = Vector2.all(min(size.x, size.y) * 0.75);
-    markSprite = SpriteComponent()
-      ..sprite =
-          await (findGame()?.loadSprite(spritePath) ?? Sprite.load(spritePath))
-      ..size = pieceSize
-      ..anchor = Anchor.center
-      ..position = size / 2;
+    markSprite = SpriteComponent(
+      sprite: await theme.symbolSprite(symbol, pieceSize.x),
+      size: pieceSize,
+      anchor: Anchor.center,
+      position: size / 2,
+    );
     add(markSprite!);
   }
 
@@ -47,6 +51,7 @@ class TicTacToeBoard extends Component {
   bool gameOver = false;
 
   late final BoardLayout layout;
+  GameTheme theme = GameThemes.classic;
 
   bool confettiRunning = false;
   final Random random = Random();
@@ -56,15 +61,18 @@ class TicTacToeBoard extends Component {
   Future<void> onLoad() async {
     final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
     layout = BoardLayout(canvasSize);
+    theme = ThemeStore.current;
 
-    // Background
-    final background = SpriteComponent()
-      ..sprite =
-          await (findGame()?.loadSprite('playscreen.png') ??
-              Sprite.load('playscreen.png'))
-      ..size = canvasSize
-      ..position = Vector2.zero();
-    add(background);
+    // Themed background (solid)
+    add(RectangleComponent(
+      size: canvasSize, position: Vector2.zero(),
+      paint: Paint()..color = theme.boardBackground,
+    ));
+
+    // Themed board backdrop + grid lines
+    for (final piece in themedBoardComponents(layout, theme)) {
+      add(piece);
+    }
 
     // Player profile image - use chosen avatar if available
     try {
@@ -101,23 +109,23 @@ class TicTacToeBoard extends Component {
       position: Vector2(canvasSize.x / 2, topMessageY),
       anchor: Anchor.center,
       textRenderer: TextPaint(
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 24,
-          color: Colors.white,
+          color: theme.contrastColor,
           fontWeight: FontWeight.bold,
         ),
       ),
     );
     add(messageText);
 
-    // Buttons
-    final buttonSize = layout.cellHeight * 0.45;
+    // Buttons (themed chips)
     final topButtonY = max(layout.boardY - layout.cellHeight * 0.55, 64.0);
     add(
-      _PressdownButton(
-        imagePath: 'return.png',
-        position: Vector2(buttonSize * 0.5 + 20, topButtonY),
-        size: Vector2(buttonSize, buttonSize),
+      ButtonComponent(
+        label: 'BACK',
+        position: Vector2(76, topButtonY),
+        size: Vector2(84, 34),
+        theme: theme,
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
@@ -128,12 +136,12 @@ class TicTacToeBoard extends Component {
       ),
     );
 
-    final settingsButtonSize = layout.cellHeight * 0.4;
     add(
-      _PressdownButton(
-        imagePath: 'settings.png',
-        position: Vector2(canvasSize.x - settingsButtonSize * 0.5 - 20, topButtonY),
-        size: Vector2(settingsButtonSize, settingsButtonSize),
+      ButtonComponent(
+        label: 'SETTINGS',
+        position: Vector2(canvasSize.x - 76, topButtonY),
+        size: Vector2(84, 34),
+        theme: theme,
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
@@ -146,10 +154,11 @@ class TicTacToeBoard extends Component {
 
     final restartSize = layout.cellHeight * 0.9;
     add(
-      _PressdownButton(
-        imagePath: 'restart.png',
+      ButtonComponent(
+        label: 'RESTART',
         position: Vector2(canvasSize.x / 2, canvasSize.y - restartSize * 0.6),
-        size: Vector2(restartSize, restartSize),
+        size: Vector2(120, 40),
+        theme: theme,
         onPressed: restartGame,
       ),
     );
@@ -365,46 +374,5 @@ class TicTacToeBoard extends Component {
         "Confetti has stopped",
       ); //Used this to check if its loading and I'm not seeing it
     });
-  }
-}
-
-class _PressdownButton extends SpriteComponent with TapCallbacks {
-  final VoidCallback onPressed;
-  final String imagePath;
-
-  _PressdownButton({
-    required this.imagePath,
-    required Vector2 position,
-    required Vector2 size,
-    required this.onPressed,
-  }) : super(size: size, position: position, anchor: Anchor.center);
-
-  @override
-  Future<void> onLoad() async {
-    sprite =
-        await (findGame()?.loadSprite(imagePath) ?? Sprite.load(imagePath));
-  }
-
-  @override
-  void onTapDown(TapDownEvent event) {
-    if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
-    _bounceEffect();
-    Future.delayed(Duration(milliseconds: 180), () => onPressed());
-  }
-
-  void _bounceEffect() {
-    add(
-      SequenceEffect([
-        ScaleEffect.to(Vector2(0.9, 0.9), EffectController(duration: 0.05)),
-        ScaleEffect.to(
-          Vector2(1.05, 1.05),
-          EffectController(duration: 0.08, curve: Curves.easeOut),
-        ),
-        ScaleEffect.to(
-          Vector2(1.0, 1.0),
-          EffectController(duration: 0.05, curve: Curves.easeIn),
-        ),
-      ]),
-    );
   }
 }
