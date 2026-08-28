@@ -1,0 +1,41 @@
+project_id = "local"
+
+[api]
+  enabled = true
+  port = 54321
+  schemas = ["public", "storage", "graphql_public"]
+  extra_search_path = ["public", "extensions"]
+  max_rows = 1000
+
+[db]
+  port = 54322
+
+[studio]
+  enabled = true
+  port = 54323
+
+[inbucket]
+  enabled = true
+  port = 54324
+
+[storage]
+  enabled = true
+  file_size_limit = "50MiB"
+
+[auth]
+  enabled = true
+  site_url = "http://localhost:3000"
+  additional_redirect_urls = ["http://localhost:3000", "io.supabase.tictactoe://login-callback"]
+
+[auth.email]
+  enable_signup = true
+
+[functions]
+  [functions.create-match]
+    verify_jwt = true
+  [functions.join-match]
+    verify_jwt = true
+  [functions.submit-move]
+    verify_jwt = true
+  [functions.cancel-match]
+    verify_jwt = true

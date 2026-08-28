@@ -10,7 +10,7 @@ import 'components/auth_gate_component.dart';
 import 'auth_gate.dart';
 import 'tictactoe.dart';
 import 'service/link_service.dart';
-import 'service/guest_service.dart';
+import 'service/supabase_match_service.dart';
 import 'settings_screen.dart';
 import 'package:flame/flame.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
@@ -83,6 +83,10 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
   }
 
   Future<void> _tryJoin() async {
+    if (!await widget.game.requireSignedInForOnlineAction()) {
+      return;
+    }
+
     final matchId = _controller.text.trim().toUpperCase();
     if (matchId.isEmpty) {
       setState(() => _notice = 'Please enter a match code');
@@ -90,16 +94,13 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
     }
     setState(() => _busy = true);
     try {
-      final response = await Supabase.instance.client.functions.invoke(
-        'join-match',
-        body: {'matchId': matchId},
-      );
-      final data = response.data as Map<String, dynamic>? ?? {};
-      if (data['alreadyHasOpponent'] == true) {
-        setState(() => _notice = 'Match already has an opponent');
+      final match = await SupabaseMatchService().joinMatch(matchId: matchId);
+      final joinedId = match['id']?.toString();
+      if (joinedId == null || joinedId.isEmpty) {
+        setState(() => _notice = 'Match unavailable or already joined');
         return;
       }
-      widget.game.joinMatch(matchId);
+      widget.game.joinMatch(joinedId);
       widget.game.overlays.remove('code_input');
     } catch (_) {
       setState(() => _notice = 'Server error. Tap Join to try again.');

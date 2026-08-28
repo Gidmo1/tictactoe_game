@@ -6,7 +6,7 @@ import 'package:flame/effects.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:flutter/services.dart';
-import 'service/supabase_compat.dart';
+import 'service/supabase_match_service.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io' show Platform;
@@ -14,7 +14,6 @@ import 'package:android_intent_plus/android_intent.dart';
 import 'package:share_plus/share_plus.dart';
 import 'tictactoe.dart';
 import 'components/loading_placeholder.dart';
-import 'service/guest_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class GenerateCodeScreen extends Component
@@ -57,6 +56,10 @@ class GenerateCodeScreen extends Component
   }
 
   Future<void> startGenerateFlow() async {
+    if (!await game.requireSignedInForOnlineAction()) {
+      return;
+    }
+
     generatedCode = null;
     final codeDisplay = _CodeDisplay(
       () => generatedCode ?? '',
@@ -71,39 +74,36 @@ class GenerateCodeScreen extends Component
     var attempts = 0;
     var createdOnServer = false;
     String? usedCode;
+    String? createdMatchId;
 
     while (attempts < maxAttempts && !createdOnServer) {
       attempts += 1;
-      generatedCode = _randomCode();
-      usedCode = generatedCode;
-      final code = generatedCode!;
       try {
-        final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-        final callable = functions.httpsCallable('createMatch');
-        final playerId = await GuestService.getOrCreateGuestId();
-        final res = await callable.call({
-          'matchId': 'match_$code',
-          'playerId': playerId,
-        });
-        final data = res.data as Map<String, dynamic>? ?? {};
-        if (data['alreadyHasOpponent'] == true) {
-          _showTransientMessage('Code in use, trying another...');
-          await Future.delayed(const Duration(milliseconds: 900));
-          continue;
+        final match = await SupabaseMatchService().createMatch(
+          boardSize: 3,
+          winLength: 3,
+        );
+        createdMatchId = match['id']?.toString();
+        final inviteCode = (match['invite_code'] ?? '').toString();
+        if (createdMatchId == null || createdMatchId!.isEmpty || inviteCode.isEmpty) {
+          throw StateError('Supabase create_match returned no match data');
         }
+
+        generatedCode = inviteCode.toUpperCase();
+        usedCode = generatedCode;
         createdOnServer = true;
         try {
-          await Clipboard.setData(ClipboardData(text: code));
+          await Clipboard.setData(ClipboardData(text: generatedCode!));
         } catch (_) {}
         _showTransientMessage('Code generated and copied.');
       } catch (e) {
-        debugPrint('createMatch callable error: $e');
+        debugPrint('Supabase createMatch error: $e');
         _showTransientMessage('Server error, retrying...');
         await Future.delayed(const Duration(milliseconds: 900));
       }
     }
 
-    if (!createdOnServer) {
+    if (!createdOnServer || createdMatchId == null || createdMatchId!.isEmpty) {
       _showTransientMessage('Failed to create invite. Try again later.');
       await Future.delayed(const Duration(milliseconds: 1500));
       children.whereType<_CodeDisplay>().toList().forEach(
@@ -112,9 +112,8 @@ class GenerateCodeScreen extends Component
       return;
     }
 
-    final matchId = 'match_${usedCode!}';
     try {
-      game.pendingMatchId = matchId;
+      game.pendingMatchId = createdMatchId;
       // Respect persisted symbol rotation preference so the creator may be X or O
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -131,7 +130,12 @@ class GenerateCodeScreen extends Component
     }
 
     // show the copy and share buttons
-    _showInviteControls(matchId, usedCode);
+    _showInviteControls(createdMatchId!, usedCode!);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (game.pendingMatchId == createdMatchId) {
+        game.openMatchWithId(createdMatchId!, isCreator: true);
+      }
+    });
   }
 
   void _showInviteControls(String matchId, String code) {
@@ -256,93 +260,7 @@ class GenerateCodeScreen extends Component
     add(copyBtn);
     add(shareBtn);
 
-    // 5 minute expiry
-    Future.delayed(const Duration(minutes: 5), () async {
-      try {
-        final doc = await FirebaseFirestore.instance
-            .collection('matches')
-            .doc(matchId)
-            .get();
-        if (doc.exists) {
-          final data = doc.data() ?? {};
-          if ((data['status'] ?? 'waiting') == 'waiting') {
-            final functions = FirebaseFunctions.instanceFor(
-              region: 'us-central1',
-            );
-            final callable = functions.httpsCallable('cancelMatch');
-            final playerId = await GuestService.getOrCreateGuestId();
-            await callable.call({'matchId': matchId, 'playerId': playerId});
-            _showTransientMessage('Invite expired');
-            children.whereType<_CodeDisplay>().forEach(
-              (c) => c.removeFromParent(),
-            );
-            // remove buttons (if still present)
-            try {
-              copyBtn.removeFromParent();
-            } catch (_) {}
-            try {
-              shareBtn.removeFromParent();
-            } catch (_) {}
-          }
-        }
-      } catch (_) {}
-    });
-
-    // listen for join events
-    final sub = FirebaseFirestore.instance
-        .collection('matches')
-        .doc(matchId)
-        .snapshots()
-        .listen((snap) {
-          if (!snap.exists) return;
-          final d = snap.data() ?? {};
-          if (d['playerOUID'] != null &&
-              (d['playerOUID'] as String).isNotEmpty) {
-            _showJoinAcceptedOverlay(matchId);
-          }
-        });
-    _subscriptions.add(sub);
-  }
-
-  void _showJoinAcceptedOverlay(String matchId) {
-    // show a small banner so the host can accept
-    final flameGame = findGame();
-    if (flameGame == null) return;
-    // remove any existing banners for this purpose
-    flameGame.children.whereType<NotificationBanner>().forEach(
-      (b) => b.removeFromParent(),
-    );
-    final banner = NotificationBanner(
-      message: 'Friend accepted your invite — tap to join',
-      onJoin: () {
-        try {
-          game.openMatchWithId(matchId, isCreator: true);
-        } catch (e) {
-          debugPrint('Error opening match from banner: $e');
-        }
-      },
-      onExpire: () async {
-        try {
-          final functions = FirebaseFunctions.instanceFor(
-            region: 'us-central1',
-          );
-          final callable = functions.httpsCallable('cancelMatch');
-          final playerId = await GuestService.getOrCreateGuestId();
-          await callable.call({'matchId': matchId, 'playerId': playerId});
-          _showTransientMessage('Invite canceled');
-          // remove local UI for this invite
-          children.whereType<_CodeDisplay>().forEach(
-            (c) => c.removeFromParent(),
-          );
-          children.whereType<_ImageButton>().forEach(
-            (b) => b.removeFromParent(),
-          );
-        } catch (e) {
-          debugPrint('cancel on banner expire failed: $e');
-        }
-      },
-    );
-    flameGame.add(banner);
+    // Legacy Firebase hooks are intentionally removed in favor of the Supabase server-driven flow.
   }
 
   @override

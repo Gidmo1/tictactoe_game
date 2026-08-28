@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flame/components.dart';
-import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart' hide Route;
@@ -10,6 +9,7 @@ import 'package:tictactoe_game/privacy_options_screen.dart';
 import 'package:tictactoe_game/profile_screen.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/components/button.dart';
+import 'components/auth_gate_component.dart';
 import 'package:tictactoe_game/game_themes/theme.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
 import 'package:tictactoe_game/game_themes/theme_picker.dart';
@@ -20,7 +20,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'service/invite_service.dart';
 import 'friend_invite_screen.dart';
 import 'invite_match_screen.dart';
-import 'invite_options_screen.dart';
 import 'generate_code_screen.dart';
 import 'join_match_screen.dart';
 import 'link_handler.dart';
@@ -66,6 +65,29 @@ class TicTacToeGame extends FlameGame
   String? myPlayerSymbol;
   String currentRoute = 'menu';
   VsComputerMatchConfig? vsComputerConfig;
+
+  Future<bool> requireSignedInForOnlineAction() async {
+    if (Supabase.instance.client.auth.currentUser != null) {
+      return true;
+    }
+
+    try {
+      final gate = AuthGateComponent(
+        onSignedIn: () {
+          debugPrint('Online action resumed after sign-in.');
+        },
+      );
+      gate.priority = 1006000000000;
+      add(gate);
+    } catch (_) {
+      try {
+        overlays.add('auth_gate');
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
   // Temporary callback set when showing the auth gate so the Flutter
   // overlay can notify game code when the user successfully signs in.
   void Function()? pendingAuthOnSignedIn;
@@ -132,38 +154,12 @@ class TicTacToeGame extends FlameGame
         overlays.remove('competition_fallback');
       }
     } catch (_) {}
-    // If navigating to invite with a pending match, add the lobby once invite UI is ready.
-    if (routeName == 'invite' &&
-        pendingMatchId != null &&
-        !pendingMatchIsTournament) {
-      // Poll for Invite screen and add FriendLobbyComponent when ready.
-      Future<void> tryAddLobby(int retries) async {
-        final hasInvite =
-            (router.children.whereType<FriendInviteScreen>().isNotEmpty ||
-            router.children.whereType<FriendInviteComponent>().isNotEmpty ||
-            // fallback: in case invite was added directly to the game
-            children.whereType<FriendInviteScreen>().isNotEmpty ||
-            children.whereType<FriendInviteComponent>().isNotEmpty);
-        if (hasInvite) {
-          children.whereType<FriendLobbyComponent>().forEach(
-            (c) => c.removeFromParent(),
-          );
-          add(FriendLobbyComponent(matchId: pendingMatchId!));
-          return;
-        }
-        if (retries <= 0) {
-          // timed out — add lobby anyway to avoid leaving user waiting
-          children.whereType<FriendLobbyComponent>().forEach(
-            (c) => c.removeFromParent(),
-          );
-          add(FriendLobbyComponent(matchId: pendingMatchId!));
-          return;
-        }
-        await Future.delayed(const Duration(milliseconds: 60));
-        return tryAddLobby(retries - 1);
-      }
-
-      tryAddLobby(10);
+    // A pending Supabase match is rendered directly by the invite board route.
+    // The former Firebase waiting lobby must not be layered over that board.
+    if (routeName == 'invite' && pendingMatchId != null) {
+      children.whereType<FriendLobbyComponent>().forEach(
+        (component) => component.removeFromParent(),
+      );
     }
     debugPrint(
       'handleRouteChange: route=$routeName pendingTournamentAutoSearch=$pendingTournamentAutoSearch ts=${DateTime.now().toIso8601String()}',
@@ -405,7 +401,8 @@ class TicTacToeGame extends FlameGame
           }
           return TicTacToeInviteScreen(matchId: pendingMatchId!);
         }),
-        'invite_options': Route(() => InviteOptionsScreen()),
+        // Use the active Supabase invite hub for the VS FRIEND entry point.
+        'invite_options': Route(() => FriendInviteScreen()),
         'invite_generate': Route(() => GenerateCodeScreen()),
         'invite_join': Route(() => JoinMatchScreen()),
         'profile': Route(() => ProfileScreen()),

@@ -4,10 +4,10 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 //import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart' hide Route;
-import 'service/supabase_compat.dart';
+import 'service/supabase_match_service.dart';
 //import 'package:tictactoe_game/settings_screen.dart';
 import 'tictactoe.dart';
-import 'service/guest_service.dart';
+// No guest fallback needed here: online join requires a signed-in user.
 
 class JoinMatchScreen extends Component with HasGameReference<TicTacToeGame> {
   String input = '';
@@ -60,32 +60,28 @@ class JoinMatchScreen extends Component with HasGameReference<TicTacToeGame> {
   }
 
   Future<void> attemptJoin(String code) async {
+    if (!await game.requireSignedInForOnlineAction()) {
+      return;
+    }
+
     if (code.length != 6) {
       _showTransientMessage('Code must be 6 chars');
       return;
     }
-    final matchId = 'match_$code';
+    final matchId = code.toUpperCase();
     try {
-      final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-      final callable = functions.httpsCallable('joinMatch');
-      final playerId = await GuestService.getOrCreateGuestId();
-      final res = await callable.call({
-        'matchId': matchId,
-        'playerId': playerId,
-      });
-      final data = res.data as Map<String, dynamic>? ?? {};
-      if (data['ok'] == true) {
+      final match = await SupabaseMatchService().joinMatch(matchId: matchId);
+      if (match['id'] != null) {
         _showTransientMessage('Joined match');
-        game.openMatchWithId(matchId, isCreator: false);
+        game.openMatchWithId(match['id'].toString(), isCreator: false);
         removeFromParent();
         return;
-      } else {
-        final msg = data['message'] as String? ?? 'Unable to join';
-        _showTransientMessage(msg);
-        return;
       }
+
+      _showTransientMessage('Unable to join');
+      return;
     } catch (e) {
-      debugPrint('joinMatch callable error: $e');
+      debugPrint('joinMatch Supabase error: $e');
       _showTransientMessage('Failed to join. Try again.');
     }
   }

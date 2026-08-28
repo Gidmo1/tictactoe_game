@@ -8,9 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'tictactoe.dart';
 import 'dart:async';
-import 'service/supabase_compat.dart';
-import 'service/guest_service.dart';
-import 'service/supabase_compat.dart' as fb;
+import 'service/supabase_match_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FriendInviteComponent extends PositionComponent
@@ -117,6 +115,10 @@ class FriendInviteComponent extends PositionComponent
   }
 
   Future<void> startGenerateFlow() async {
+    if (!await game.requireSignedInForOnlineAction()) {
+      return;
+    }
+
     // Clear any previous generated value(code that was formerly generated)
     generatedCode = null;
     // Show code display immediately
@@ -131,34 +133,28 @@ class FriendInviteComponent extends PositionComponent
     const maxAttempts = 4;
     bool createdOnServer = false;
     String? usedCode;
+    String? createdMatchId;
 
     while (attempts < maxAttempts && !createdOnServer) {
       attempts += 1;
-      generatedCode = _randomCode();
-      usedCode = generatedCode;
-
-      final code = generatedCode!;
-
       try {
-        final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-        final callable = functions.httpsCallable('createMatch');
-        final playerId = await GuestService.getOrCreateGuestId();
-        final res = await callable.call({
-          'matchId': 'match_$code',
-          'playerId': playerId,
-        });
-        final data = res.data as Map<String, dynamic>? ?? {};
+        final match = await SupabaseMatchService().createMatch(
+          boardSize: 3,
+          winLength: 3,
+        );
+        createdMatchId = match['id']?.toString();
+        final inviteCode = (match['invite_code'] ?? '').toString();
 
-        if (data['alreadyHasOpponent'] == true) {
-          showTransientMessage('Code in use, trying another...');
-          await Future.delayed(const Duration(milliseconds: 900));
-          continue;
+        if (createdMatchId == null || createdMatchId!.isEmpty || inviteCode.isEmpty) {
+          throw StateError('Supabase create_match returned no match data');
         }
 
+        generatedCode = inviteCode.toUpperCase();
+        usedCode = generatedCode;
         createdOnServer = true;
 
         try {
-          await Clipboard.setData(ClipboardData(text: code));
+          await Clipboard.setData(ClipboardData(text: generatedCode!));
         } catch (_) {}
         final copiedNotice = TextComponent(
           text: 'Code copied',
@@ -181,14 +177,14 @@ class FriendInviteComponent extends PositionComponent
       }
     }
 
-    if (!createdOnServer) {
+    if (!createdOnServer || createdMatchId == null || createdMatchId!.isEmpty) {
       showTransientMessage('Failed to create invite. Try again later.');
       await Future.delayed(const Duration(milliseconds: 1500));
       codeDisplay.removeFromParent();
       return;
     }
 
-    final matchId = 'match_${usedCode!}';
+    final matchId = createdMatchId!;
     try {
       game.pendingMatchId = matchId;
       try {
@@ -237,32 +233,29 @@ class FriendInviteComponent extends PositionComponent
 
   // input is updated in-place, UI will read from the getter each frame.
   Future<void> attemptJoin(String code) async {
+    if (!await game.requireSignedInForOnlineAction()) {
+      return;
+    }
+
     if (code.length != codeLength) {
       showTransientMessage('Code must be $codeLength chars');
       return;
     }
-    final matchId = 'match_$code';
+    final matchCode = code.toUpperCase();
     try {
-      final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-      final callable = functions.httpsCallable('joinMatch');
-      final playerId = await GuestService.getOrCreateGuestId();
-      final res = await callable.call({
-        'matchId': matchId,
-        'playerId': playerId,
-      });
-      final data = res.data as Map<String, dynamic>? ?? {};
-      if (data['ok'] == true) {
+      final match = await SupabaseMatchService().joinMatch(matchId: matchCode);
+      final joinedMatchId = match['id']?.toString();
+      if (joinedMatchId != null && joinedMatchId.isNotEmpty) {
         showTransientMessage('Joined match');
-        game.openMatchWithId(matchId, isCreator: false);
+        game.openMatchWithId(joinedMatchId, isCreator: false);
         removeFromParent();
         return;
-      } else {
-        final msg = data['message'] as String? ?? 'Unable to join';
-        showTransientMessage(msg);
-        return;
       }
+
+      showTransientMessage('Unable to join');
+      return;
     } catch (e) {
-      debugPrint('joinMatch callable error: $e');
+      debugPrint('joinMatch Supabase error: $e');
       showTransientMessage('Failed to join. Try again.');
     }
   }
@@ -292,7 +285,7 @@ class FriendInviteComponent extends PositionComponent
 class FriendLobbyComponent extends PositionComponent
     with HasGameReference<TicTacToeGame> {
   final String matchId;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
+  StreamSubscription<dynamic>? _sub;
 
   FriendLobbyComponent({required this.matchId});
 
@@ -373,45 +366,10 @@ class FriendLobbyComponent extends PositionComponent
           } catch (_) {}
         } catch (_) {}
 
-        // First try to call a server-side callable to cancel the match. This
-        // works even when direct client writes are restricted by security rules.
-        var cancelledRemotely = false;
         try {
-          final functions = FirebaseFunctions.instanceFor(
-            region: 'us-central1',
-          );
-          final callable = functions.httpsCallable('cancelMatch');
-          final playerId = await GuestService.getOrCreateGuestId();
-          await callable.call({'matchId': matchId, 'playerId': playerId});
-          cancelledRemotely = true;
+          await SupabaseMatchService().cancelMatch(matchId: matchId);
         } catch (e) {
-          debugPrint(
-            'cancelMatch callable failed (will fallback to client update): $e',
-          );
-        }
-
-        if (!cancelledRemotely) {
-          // Fallback: attempt to update the match document directly, or delete
-          // it if the update fails (covers older projects with permissive rules).
-          try {
-            await FirebaseFirestore.instance
-                .collection('matches')
-                .doc(matchId)
-                .update({
-                  'status': 'cancelled',
-                  'cancelledAt': FieldValue.serverTimestamp(),
-                });
-          } catch (e) {
-            // If update fails (document missing or permission), try delete.
-            try {
-              await FirebaseFirestore.instance
-                  .collection('matches')
-                  .doc(matchId)
-                  .delete();
-            } catch (err) {
-              debugPrint('Failed to cancel/delete match $matchId: $err');
-            }
-          }
+          debugPrint('Supabase cancelMatch failed: $e');
         }
 
         try {
@@ -447,125 +405,6 @@ class FriendLobbyComponent extends PositionComponent
     cancelBtn.priority = 11060;
     add(cancelBtn);
 
-    // Listen to Firestore match doc
-    _sub = FirebaseFirestore.instance
-        .collection('matches')
-        .doc(matchId)
-        .snapshots()
-        .listen(
-          (snap) {
-            // run async handling in a microtask so we can await where needed
-            Future.microtask(() async {
-              try {
-                final data = snap.data() ?? {};
-                final status = data['status'] as String? ?? 'waiting';
-                statusText.text = 'Status: $status';
-                if (status == 'ongoing') {
-                  try {
-                    // Compute opponent name and show a brief 'Found opponent' notice on the lobby
-                    final playerXUID = (data['playerXUID'] ?? '') as String;
-                    final playerOUID = (data['playerOUID'] ?? '') as String;
-
-                    // Extract nested player objects if present
-                    String pxName = '';
-                    String poName = '';
-                    try {
-                      final px = data['playerX'] as Map<String, dynamic>?;
-                      final po = data['playerO'] as Map<String, dynamic>?;
-                      if (px != null)
-                        pxName =
-                            (px['displayName'] ?? px['name'] ?? '') as String;
-                      if (po != null)
-                        poName =
-                            (po['displayName'] ?? po['name'] ?? '') as String;
-                    } catch (_) {}
-
-                    if (pxName.isEmpty)
-                      pxName = (data['playerXName'] ?? '') as String? ?? '';
-                    if (poName.isEmpty)
-                      poName = (data['playerOName'] ?? '') as String? ?? '';
-
-                    final myUID =
-                        fb.FirebaseAuth.instance.currentUser?.uid ??
-                        await GuestService.getOrCreateGuestId();
-                    String oppName = 'Opponent';
-                    if (myUID == playerXUID) {
-                      oppName = poName.isNotEmpty
-                          ? poName
-                          : (playerOUID.isNotEmpty ? playerOUID : 'Opponent');
-                    } else {
-                      oppName = pxName.isNotEmpty
-                          ? pxName
-                          : (playerXUID.isNotEmpty ? playerXUID : 'Opponent');
-                    }
-
-                    final foundText = TextComponent(
-                      text: 'Found opponent: $oppName — starting...',
-                      position: Vector2(game.size.x / 2, dialogPos.y + 28),
-                      anchor: Anchor.center,
-                      textRenderer: TextPaint(
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                        ),
-                      ),
-                    )..priority = 11050;
-                    add(foundText);
-
-                    // AI opponent handling removed.
-
-                    // Wait a short moment so player sees the found message, then route to match screen
-                    await Future.delayed(const Duration(milliseconds: 1200));
-                    try {
-                      game.router.pushNamed('invite');
-                    } catch (_) {}
-                    removeFromParent();
-                  } catch (e) {
-                    debugPrint('Error transitioning to match: $e');
-                    // fallback: ensure we still try to transition
-                    try {
-                      game.router.pushNamed('invite');
-                    } catch (_) {}
-                    removeFromParent();
-                  }
-                }
-              } catch (e) {
-                debugPrint('Error processing match snapshot: $e');
-              }
-            });
-          },
-          onError: (err) {
-            // Firestore permission errors or network errors should not crash the
-            // game. Show a small notice and remove the lobby so the player returns to invite screen
-            debugPrint('Match snapshot listen error: $err');
-            try {
-              final msg = (err is FirebaseException)
-                  ? 'Error: ${err.code}'
-                  : 'Unable to watch match';
-              final notice = TextComponent(
-                text: msg,
-                position: dialogPos + Vector2(w / 2, 48),
-                anchor: Anchor.topCenter,
-                textRenderer: TextPaint(
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              )..priority = 11050;
-              add(notice);
-              Future.delayed(const Duration(milliseconds: 1400), () {
-                try {
-                  notice.removeFromParent();
-                } catch (_) {}
-              });
-            } catch (_) {}
-            try {
-              if (game.currentRoute != 'invite_options')
-                game.router.pushReplacementNamed('invite_options');
-            } catch (_) {}
-            try {
-              removeFromParent();
-            } catch (_) {}
-          },
-        );
   }
 
   @override

@@ -1,3 +1,5 @@
+// ignore_for_file: dead_code
+
 import 'dart:async';
 import 'dart:math';
 import 'service/supabase_compat.dart';
@@ -16,6 +18,7 @@ import 'service/supabase_compat.dart' as fb;
 import 'service/competition_service.dart';
 import 'service/score_service.dart';
 import 'models/score.dart';
+import 'service/supabase_match_service.dart';
 import 'tictactoe.dart';
 import 'service/guest_service.dart';
 
@@ -44,6 +47,7 @@ class TicTacToeInviteScreen extends Component {
     region: 'us-central1',
   );
   StreamSubscription<DocumentSnapshot>? matchSubscription;
+  StreamSubscription<Map<String, dynamic>>? supabaseMatchSubscription;
 
   bool confettiRunning = false;
   final Random random = Random();
@@ -162,6 +166,9 @@ class TicTacToeInviteScreen extends Component {
         );
       }
     }
+
+    await _startSupabaseMatch();
+    return;
 
     // Firestore listener for match updates
     // Choose collection based on whether the pending match is a tournament
@@ -634,8 +641,99 @@ class TicTacToeInviteScreen extends Component {
   // Scoring for tournament matches is handled server-side; client must not
   // write scores.
 
+  Future<void> _startSupabaseMatch() async {
+    final service = SupabaseMatchService();
+    final userId = service.userId;
+    if (userId == null) {
+      messageText.text = 'Sign in required';
+      return;
+    }
+
+    try {
+      await service.reconnect(matchId);
+      supabaseMatchSubscription = service.watchMatch(matchId).listen(
+        _applySupabaseMatch,
+        onError: (error) {
+          debugPrint('Supabase match subscription error: $error');
+          messageText.text = 'Connection lost. Reconnecting...';
+        },
+      );
+    } catch (error) {
+      debugPrint('Supabase match reconnect failed: $error');
+      messageText.text = 'Unable to reconnect to match';
+    }
+  }
+
+  void _applySupabaseMatch(Map<String, dynamic> data) {
+    if (data.isEmpty) return;
+
+    final boardData = data['board'];
+    if (boardData is List) {
+      final flattened = <String>[];
+      for (final row in boardData) {
+        if (row is List) {
+          flattened.addAll(row.map((cell) => cell.toString()));
+        }
+      }
+      if (flattened.length == board.length) {
+        for (var index = 0; index < flattened.length; index++) {
+          if (board[index] == flattened[index]) continue;
+          board[index] = flattened[index];
+          final cell = children
+              .whereType<TicTacToeCellInvite>()
+              .firstWhere((item) => item.row * 3 + item.col == index);
+          if (board[index].isNotEmpty) cell.mark(board[index]);
+        }
+      }
+    }
+
+    playerXUID = (data['player_x'] ?? '').toString();
+    playerOUID = (data['player_o'] ?? '').toString();
+    currentPlayer = (data['current_turn'] ?? 'X').toString();
+    final status = (data['status'] ?? 'waiting').toString();
+    final winnerId = (data['winner'] ?? '').toString();
+    gameOver = status == 'finished' || status == 'abandoned';
+
+    if (status == 'waiting') {
+      messageText.text = 'Waiting for opponent...';
+    } else if (gameOver) {
+      final didWin = winnerId.isNotEmpty && winnerId == SupabaseMatchService().userId;
+      final didDraw = winnerId.isEmpty && status == 'finished';
+      messageText.text = didDraw ? 'Draw!' : (didWin ? 'You win!' : 'You lose!');
+      _addEndMatchOverlaySafely(
+        findGame(),
+        didWin: didWin,
+        didDraw: didDraw,
+        overrideMessage: messageText.text,
+      );
+    } else {
+      messageText.text = currentPlayer == SupabaseMatchService().userId
+          ? 'Your turn'
+          : 'Opponent\'s turn';
+      final symbol = findGame() is TicTacToeGame
+          ? (findGame() as TicTacToeGame).myPlayerSymbol
+          : null;
+      if (symbol != null) {
+        messageText.text = currentPlayer == symbol ? 'Your turn' : 'Opponent\'s turn';
+      }
+    }
+  }
+
   void handleTap(int row, int col) async {
     if (gameOver || board[row * 3 + col] != '') return;
+
+    final service = SupabaseMatchService();
+    if (service.userId == null) return;
+    final gameRef = findGame();
+    final symbol = gameRef is TicTacToeGame ? gameRef.myPlayerSymbol : null;
+    if (symbol == null || currentPlayer != symbol) return;
+
+    try {
+      await service.submitMove(matchId: matchId, row: row, col: col);
+    } catch (error) {
+      debugPrint('Supabase submitMove failed: $error');
+    }
+    return;
 
     // Ensure user is signed in and token propagated before attempting move
     // Determine local playerId (signed-in uid preferred, otherwise guest)
@@ -677,6 +775,7 @@ class TicTacToeInviteScreen extends Component {
 
   void leaveMatch() async {
     matchSubscription?.cancel();
+    supabaseMatchSubscription?.cancel();
 
     // Leave tournament queue if necessary
     try {
@@ -732,7 +831,7 @@ class TicTacToeInviteScreen extends Component {
         // Create dim if needed
         dim ??= RectangleComponent(
           size: flameGame.size ?? BoardLayout.defaultScreenSize,
-          paint: Paint()..color = Colors.black.withOpacity(0.6),
+          paint: Paint()..color = Colors.black.withValues(alpha: 0.6),
           priority: 1000000000000,
         );
 
@@ -882,7 +981,7 @@ class TicTacToeInviteScreen extends Component {
       if (flameGame.children.whereType<EndMatchOverlay>().isNotEmpty) return;
       final finalDim = RectangleComponent(
         size: flameGame.size ?? BoardLayout.defaultScreenSize,
-        paint: Paint()..color = Colors.black.withOpacity(0.6),
+        paint: Paint()..color = Colors.black.withValues(alpha: 0.6),
         priority: 1000000000000,
       );
       flameGame.add(finalDim);
@@ -946,7 +1045,7 @@ class TicTacToeInviteScreen extends Component {
         )) {
           try {
             // remove dims with the same opacity heuristic
-            if ((r as RectangleComponent).paint.color.opacity == 0.6) {
+            if ((r as RectangleComponent).paint.color.a == 0.6) {
               r.removeFromParent();
             }
           } catch (_) {}
