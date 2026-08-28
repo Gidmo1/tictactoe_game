@@ -177,11 +177,11 @@ class GameThemes {
     name: 'Classic',
     xColor: Color(0xFF1565C0),
     oColor: Color(0xFFC62828),
-    gridColor: Color(0xFF9E9E9E),
-    boardBackground: Color(0xFFF5F5F5),
-    buttonBase: Color(0xFF37474F),
-    buttonHighlight: Color(0xFF546E7A),
-    textColor: Color(0xFFFFFFFF),
+    gridColor: Color(0xFFB8A36A),
+    boardBackground: Color(0xFF18212B),
+    buttonBase: Color(0xFF263746),
+    buttonHighlight: Color(0xFF385267),
+    textColor: Color(0xFFE8EDF2),
   );
 
   static final neonPulse = GameTheme(

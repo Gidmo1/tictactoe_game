@@ -1,38 +1,48 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flame/game.dart';
 import 'package:flame/components.dart';
 import 'components/auth_gate_component.dart';
+import 'auth_gate.dart';
 import 'tictactoe.dart';
 import 'service/link_service.dart';
 import 'service/guest_service.dart';
-import 'service/supabase_compat.dart';
-import 'service/supabase_compat.dart' as compat;
 import 'settings_screen.dart';
 import 'package:flame/flame.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
-
 import 'service/auth_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'overlays/edit_profile.dart';
+import 'supabase.dart';
 
-const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+void _startProviderSignIn(
+  BuildContext context,
+  TicTacToeGame game,
+  Future<dynamic> Function() action,
+) {
+  StreamSubscription<AuthState>? subscription;
+  subscription = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+    if (state.event != AuthChangeEvent.signedIn) return;
+    game.pendingAuthOnSignedIn?.call();
+    game.pendingAuthOnSignedIn = null;
+    subscription?.cancel();
+    game.overlays.remove('auth_gate');
+  });
+  action().catchError((_) => game.overlays.remove('auth_gate'));
+  Future.delayed(const Duration(seconds: 20), () {
+    subscription?.cancel();
+    game.overlays.remove('auth_gate');
+  });
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
-    throw StateError(
-      'Missing SUPABASE_URL or SUPABASE_ANON_KEY build definitions.',
-    );
-  }
-  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
-
-  // Initialize Flame and audio
+  runApp(const MyApp());
+  await initializeSupabase();
   await Flame.device.fullScreen();
   await Flame.device.setPortraitUpOnly();
 
@@ -43,41 +53,7 @@ void main() async {
     'button.wav',
     'background_music.mp3',
   ]);
-
-  // Preload some mostly used images for fast loading on screens
-  final preloadNames = [
-    'loading.png',
-    'leaderboard_background.png',
-    'background.png',
-    'return.png',
-    'joinatournament.png',
-    'play.png',
-    'Bronze I.png',
-    'Silver II.png',
-    'Gold III.png',
-    'confirmation_overlay.png',
-    'copy.png',
-    'sharewhatsapp.png',
-  ];
-
-  Future<void> _tryLoad(String key) async {
-    try {
-      await Flame.images.load(key);
-      debugPrint('Preloaded image: $key');
-    } catch (e) {
-      debugPrint('Preload failed for $key: $e');
-    }
-  }
-
-  // Try only the most likely locations for preloaded assets. Trying too
-  // many variants caused duplicated paths (e.g. "assets/images/images,...")
-  for (final name in preloadNames) {
-    await _tryLoad(name);
-    await _tryLoad('images/$name');
-  }
-
   await ThemeStore.init();
-  runApp(const MyApp());
 }
 
 class DeepLinkHandler extends StatefulWidget {
@@ -89,14 +65,14 @@ class DeepLinkHandler extends StatefulWidget {
 
 class _CodeInputOverlay extends StatefulWidget {
   final TicTacToeGame game;
-  const _CodeInputOverlay({Key? key, required this.game}) : super(key: key);
+  const _CodeInputOverlay({required this.game});
 
   @override
   State<_CodeInputOverlay> createState() => _CodeInputOverlayState();
 }
 
 class _CodeInputOverlayState extends State<_CodeInputOverlay> {
-  final TextEditingController _controller = TextEditingController();
+  final _controller = TextEditingController();
   String? _notice;
   bool _busy = false;
 
@@ -106,55 +82,26 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
     super.dispose();
   }
 
-  void _clearGeneratedCode() {
-    // best-effort: clear any generated code in the Flame game if present
-    try {
-      final dynamic g = widget.game;
-      if (g.clearGeneratedInviteCode is Function) {
-        g.clearGeneratedInviteCode();
-      }
-    } catch (_) {}
-  }
-
   Future<void> _tryJoin() async {
     final matchId = _controller.text.trim().toUpperCase();
     if (matchId.isEmpty) {
       setState(() => _notice = 'Please enter a match code');
-      // auto-hide notice after a short delay
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _notice = null);
-      });
       return;
     }
-
     setState(() => _busy = true);
     try {
-      final payload = <String, dynamic>{'matchId': matchId};
       final response = await Supabase.instance.client.functions.invoke(
         'join-match',
-        body: payload,
+        body: {'matchId': matchId},
       );
       final data = response.data as Map<String, dynamic>? ?? {};
-
       if (data['alreadyHasOpponent'] == true) {
         setState(() => _notice = 'Match already has an opponent');
-        try {
-          _clearGeneratedCode();
-        } catch (_) {}
-        widget.game.overlays.remove('code_input');
         return;
       }
-
-      // success — use the game's join flow (adds Flame lobby component)
       widget.game.joinMatch(matchId);
-      try {
-        _clearGeneratedCode();
-      } catch (_) {}
       widget.game.overlays.remove('code_input');
-      return;
-    } catch (err) {
-      debugPrint('joinMatch callable error (single attempt): $err');
-      // Show a concise error and allow user to manually retry
+    } catch (_) {
       setState(() => _notice = 'Server error. Tap Join to try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -163,124 +110,50 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    final screenW = MediaQuery.of(context).size.width;
-    final w = (screenW * 0.85).clamp(300.0, 520.0);
-    final rawH = w * 0.6;
-    double h = rawH;
-    if (h < 160) h = 160;
-    if (h > 360) h = 360;
-    h = h + 30;
-    final screenH = MediaQuery.of(context).size.height;
-    final minDesiredH = screenH * 0.44;
-    if (h < minDesiredH) h = minDesiredH;
-    final maxAllowedH = screenH * 0.88;
-    if (h > maxAllowedH) h = maxAllowedH;
-
-    final bg = Container(
-      constraints: BoxConstraints(maxWidth: w.toDouble()),
-      height: h,
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-      decoration: BoxDecoration(
-        image: const DecorationImage(
-          image: AssetImage('assets/images/confirmation_overlay.png'),
-          fit: BoxFit.contain,
-          alignment: Alignment.center,
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.all(20),
+        color: Colors.black87,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'JOIN MATCH',
+              style: TextStyle(color: Colors.white, fontSize: 20),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLength: 6,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp('[A-Z2-9]')),
+              ],
+              decoration: const InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                counterText: '',
+              ),
+              onSubmitted: (_) => _tryJoin(),
+            ),
+            if (_notice != null)
+              Text(_notice!, style: const TextStyle(color: Colors.orange)),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: _busy ? null : _tryJoin,
+              child: _busy
+                  ? const CircularProgressIndicator()
+                  : const Text('JOIN'),
+            ),
+            TextButton(
+              onPressed: () => widget.game.overlays.remove('code_input'),
+              child: const Text('CANCEL'),
+            ),
+          ],
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(height: h * 0.30),
-          SizedBox(
-            width: w * 0.4,
-            height: h * 0.22,
-            child: Center(
-              child: TextField(
-                controller: _controller,
-                autofocus: true,
-                maxLength: 6,
-                textCapitalization: TextCapitalization.characters,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp('[A-Z2-9]')),
-                ],
-                decoration: const InputDecoration(
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide.none,
-                    borderRadius: BorderRadius.all(Radius.circular(6)),
-                  ),
-                  counterText: '',
-                  contentPadding: EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 12,
-                  ),
-                ),
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 3,
-                  fontSize: 20,
-                ),
-                textAlign: TextAlign.center,
-                onSubmitted: (_) => _tryJoin(),
-              ),
-            ),
-          ),
-          SizedBox(
-            height: 28.0,
-            child: Center(
-              child: _notice != null
-                  ? Text(_notice!, style: const TextStyle(color: Colors.orange))
-                  : const SizedBox.shrink(),
-            ),
-          ),
-          Padding(
-            // reduce the top padding to move buttons up ~14px to avoid overflow
-            padding: const EdgeInsets.only(top: 15.0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    try {
-                      _clearGeneratedCode();
-                    } catch (_) {}
-                    widget.game.overlays.remove('code_input');
-                  },
-                  child: Image.asset(
-                    'assets/images/cancel.png',
-                    width: 120,
-                    height: 45,
-                  ),
-                ),
-                const SizedBox(width: 40),
-                GestureDetector(
-                  onTap: _busy ? null : _tryJoin,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Image.asset(
-                          'assets/images/join.png',
-                          width: 120,
-                          height: 45,
-                        ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: h * 0.16),
-        ],
-      ),
     );
-
-    return Center(child: bg);
   }
 }
 
@@ -356,6 +229,14 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
   Widget build(BuildContext context) {
     return GameWidget(
       game: _game,
+      backgroundBuilder: (context) =>
+          const ColoredBox(color: Color(0xFF10141F)),
+      loadingBuilder: (context) => const ColoredBox(
+        color: Color(0xFF10141F),
+        child: Center(
+          child: CircularProgressIndicator(color: Color(0xFFD4AF37)),
+        ),
+      ),
       overlayBuilderMap: {
         // Success login overlay
         'confirmation': (context, game) {
@@ -541,8 +422,12 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
             ),
           );
         },
-        // Flutter-based Auth Gate overlay (shown on top of edit_profile)
+        // Current Supabase auth UI.
         'auth_gate': (context, game) {
+          return GameAuthOverlay(game: game as TicTacToeGame);
+        },
+        // Legacy auth overlay retained only for compatibility.
+        'auth_gate_legacy': (context, game) {
           final g = game as TicTacToeGame;
           // Remove any Flame AuthGateComponent so the Flutter overlay isn't stacked
           try {
@@ -627,10 +512,10 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
                                 } catch (_) {}
                               });
 
-                          StreamSubscription<compat.User?>? sub;
-                          sub = FirebaseAuth.instance.authStateChanges().listen(
-                            (user) {
-                              if (user != null) {
+                          StreamSubscription<AuthState>? sub;
+                          sub = Supabase.instance.client.auth.onAuthStateChange.listen(
+                            (state) {
+                              if (state.event == AuthChangeEvent.signedIn) {
                                 try {
                                   if (g.pendingAuthOnSignedIn != null) {
                                     g.pendingAuthOnSignedIn!();
@@ -668,6 +553,24 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF34A853),
                         shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.zero,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 10),
+                    ElevatedButton.icon(
+                      onPressed: () => _startProviderSignIn(
+                        context,
+                        g,
+                        () => AuthHelper().signInWithDiscord(),
+                      ),
+                      icon: const FaIcon(FontAwesomeIcons.discord),
+                      label: const Text('Sign in with Discord'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF5865F2),
+                        foregroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
                           borderRadius: BorderRadius.zero,
                         ),
                       ),

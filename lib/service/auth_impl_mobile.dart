@@ -7,6 +7,7 @@ Future<fb.UserCredential?> signInWithGoogleImpl() async {
     await Supabase.instance.client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: 'io.supabase.tictactoe://login-callback',
+      authScreenLaunchMode: LaunchMode.inAppBrowserView,
     );
     return fb.UserCredential(user: fb.FirebaseAuth.instance.currentUser);
   } catch (e) {

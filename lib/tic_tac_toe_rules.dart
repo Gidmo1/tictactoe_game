@@ -74,6 +74,47 @@ class TicTacToeRules {
     return 'Draw';
   }
 
+  static List<int>? winningLine(
+    List<List<String>> board,
+    int size,
+    String player,
+  ) {
+    final length = winLengthFor(size);
+    const directions = [
+      [0, 1],
+      [1, 0],
+      [1, 1],
+      [1, -1],
+    ];
+    for (var row = 0; row < size; row++) {
+      for (var col = 0; col < size; col++) {
+        for (final direction in directions) {
+          final endRow = row + direction[0] * (length - 1);
+          final endCol = col + direction[1] * (length - 1);
+          if (endRow < 0 ||
+              endRow >= size ||
+              endCol < 0 ||
+              endCol >= size ||
+              board[row][col] != player) {
+            continue;
+          }
+          if (_matches(
+            board,
+            row,
+            col,
+            direction[0],
+            direction[1],
+            player,
+            length,
+          )) {
+            return [row, col, endRow, endCol];
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   static bool _matches(
     List<List<String>> board,
     int row,

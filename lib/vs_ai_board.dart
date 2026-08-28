@@ -25,8 +25,36 @@ import 'models/score.dart';
 import 'vs_computer_match_config.dart';
 import 'tic_tac_toe_rules.dart';
 
+class WinningLineComponent extends PositionComponent {
+  final Vector2 start;
+  final Vector2 end;
+  final Color color;
+
+  WinningLineComponent({
+    required this.start,
+    required this.end,
+    required this.color,
+  }) : super(priority: 2000);
+
+  @override
+  void render(Canvas canvas) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(start.x, start.y),
+      Offset(end.x, end.y),
+      paint,
+    );
+    super.render(canvas);
+  }
+}
+
 class TicTacToeVsAI extends Component {
   final VsComputerMatchConfig config;
+
   String humanPlayer = 'X';
   String aiPlayer = 'O';
   String currentPlayer = 'X';
@@ -373,7 +401,10 @@ class TicTacToeVsAI extends Component {
     );
     cell.mark(player);
 
-    if (checkForWinner(player) || checkForDraw()) {
+    if (checkForWinner(player)) {
+      _showWinningLine(player);
+      endRound();
+    } else if (checkForDraw()) {
       endRound();
     } else {
       currentPlayer = (player == humanPlayer) ? aiPlayer : humanPlayer;
@@ -426,7 +457,14 @@ class TicTacToeVsAI extends Component {
       final matchComplete = currentRound >= config.rounds;
       _updateMatchHeader(matchComplete: matchComplete);
 
-      await saveScore(result);
+      if (matchComplete) {
+        final matchResult = humanWins > aiWins
+            ? 'win'
+            : aiWins > humanWins
+            ? 'loss'
+            : 'draw';
+        await saveScore(matchResult);
+      }
 
       // Track matches towards periodic progression sign-in prompts for
       // non-signed-in users. This counter is used to show the Next
@@ -456,6 +494,7 @@ class TicTacToeVsAI extends Component {
           theme: theme,
           didWin: result == "win",
           didDraw: result == "draw",
+          scoreline: 'YOU $humanWins  -  COMPUTER $aiWins',
           showSignInPrompt: false,
           singleHomeButton: matchComplete,
           onRestart: () {
@@ -500,28 +539,10 @@ class TicTacToeVsAI extends Component {
             restartBoard();
             final router = (findGame() as dynamic).router;
 
-            // Check prefs and navigate to profile to claim avatar if appropriate
+            // Always return to the Home screen after leaving a match.
             Future(() async {
               try {
-                final prefs = await SharedPreferences.getInstance();
-                final chosen = prefs.getString('chosen_avatar') ?? '';
-                final completed =
-                    prefs.getBool('completed_first_match') ?? false;
-                final shown = prefs.getBool('avatar_claim_shown') ?? false;
-                debugPrint(
-                  'onHome: chosen="$chosen" completed=$completed shown=$shown',
-                );
-
-                // For new users (completed first match, no avatar chosen, overlay not yet shown),
-                // navigate to profile screen to claim an avatar
-                if (completed && chosen.isEmpty && !shown) {
-                  await prefs.setBool('avatar_claim_shown', true);
-                  debugPrint('onHome: navigating to profile for avatar claim');
-                  router?.pushNamed('profile');
-                } else {
-                  debugPrint('onHome: navigating to menu');
-                  router?.pushNamed('menu');
-                }
+                router?.pushNamed('menu');
               } catch (e) {
                 debugPrint('onHome: exception checking prefs: $e');
                 router?.pushNamed('menu');
@@ -548,6 +569,24 @@ class TicTacToeVsAI extends Component {
     scoreText.text = 'YOU $humanWins  -  COMPUTER $aiWins';
   }
 
+  void _showWinningLine(String player) {
+    final line = TicTacToeRules.winningLine(board, config.gridSize, player);
+    if (line == null) return;
+    add(
+      WinningLineComponent(
+        start: Vector2(
+          layout.boardX + (line[1] + 0.5) * layout.cellWidth,
+          layout.boardY + (line[0] + 0.5) * layout.cellHeight,
+        ),
+        end: Vector2(
+          layout.boardX + (line[3] + 0.5) * layout.cellWidth,
+          layout.boardY + (line[2] + 0.5) * layout.cellHeight,
+        ),
+        color: player == 'X' ? theme.xColor : theme.oColor,
+      ),
+    );
+  }
+
   void _hideMatchHeader() {
     matchText.removeFromParent();
     scoreText.removeFromParent();
@@ -571,6 +610,9 @@ class TicTacToeVsAI extends Component {
     for (var cell in children.whereType<TicTacToeCell>()) {
       cell.markSprite?.removeFromParent();
       cell.markSprite = null;
+    }
+    for (final line in children.whereType<WinningLineComponent>().toList()) {
+      line.removeFromParent();
     }
 
     confettiRunning = false;
@@ -683,7 +725,12 @@ class TicTacToeVsAI extends Component {
     );
 
     try {
-      await ScoreService().saveScore(score, loggedIn: loggedIn);
+      await ScoreService().saveScore(
+        score,
+        loggedIn: loggedIn,
+        boardSize: config.gridSize,
+        opponentType: 'computer',
+      );
     } catch (e) {
       // ScoreService already falls back to local persistence on failures,
       // but log any unexpected errors for diagnostics.

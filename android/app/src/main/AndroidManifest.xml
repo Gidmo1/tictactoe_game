@@ -54,6 +54,16 @@
                     android:host="join" />
             </intent-filter>
 
+            <!-- Supabase OAuth callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="io.supabase.tictactoe"
+                    android:host="login-callback" />
+            </intent-filter>
+
             <!-- App launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -1,45 +1,37 @@
 import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'supabase_compat.dart' as fb;
-import 'supabase_compat.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'supabase_compat.dart';
 import '../models/score.dart';
 import 'local_db.dart';
 
 class ScoreService {
   // Save a score: send to server when logged in, otherwise cache locally.
-  Future<void> saveScore(Score score, {bool loggedIn = false}) async {
+  Future<bool> saveScore(
+    Score score, {
+    bool loggedIn = false,
+    int boardSize = 3,
+    String opponentType = 'computer',
+    bool updateLocalTotals = true,
+  }) async {
     // Determine effective player id: prefer authenticated uid or fallback to score.playerId.
-    final currentUser = fb.FirebaseAuth.instance.currentUser;
-    final effectivePlayerId = currentUser?.uid ?? score.playerId;
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final effectivePlayerId = currentUser?.id ?? score.playerId;
     final willBeLoggedIn = currentUser != null;
 
     try {
-      // If the caller will be authenticated, refresh token to provide a
-      // fresh auth context to the callable.
-      if (willBeLoggedIn) {
-        try {
-          final user = currentUser;
-          await user.getIdToken(true);
-          try {
-            await fb.FirebaseAuth.instance
-                .idTokenChanges()
-                .firstWhere((u) => u?.uid == user.uid)
-                .timeout(const Duration(seconds: 2));
-          } catch (_) {}
-        } catch (e) {
-          debugPrint('Token refresh failed before saveScore $e');
-        }
-      }
-
-      final callable = FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('updateScore');
-      final result = await callable.call({
-        'playerId': effectivePlayerId,
-        'result': _scoreResult(score),
-      });
-      debugPrint('Score updated successfully: ${result.data}');
+      if (!willBeLoggedIn) throw StateError('No authenticated Supabase user');
+      await Supabase.instance.client.rpc(
+        'record_score',
+        params: {
+          'score_result': _scoreResult(score),
+          'score_points': score.points,
+          'score_board_size': boardSize,
+          'score_opponent_type': opponentType,
+        },
+      );
+      debugPrint('Score saved to Supabase for $effectivePlayerId');
 
       // Remove any local cache for the original score.playerId (guest) if present
       try {
@@ -48,9 +40,12 @@ class ScoreService {
         if (prefs.containsKey(guestKey)) await prefs.remove(guestKey);
       } catch (_) {}
 
-      return;
+      return true;
     } catch (e) {
-      debugPrint('Error saving score to Firebase (will cache locally): $e');
+      debugPrint('Error saving score to Supabase (will cache locally): $e');
+      if (updateLocalTotals) {
+        await recordOfflineMatch(_scoreResult(score));
+      }
     }
 
     // Fallback: persist guest score locally under guest_score_<playerId> for retry.
@@ -66,8 +61,10 @@ class ScoreService {
         'timestamp': DateTime.now().toIso8601String(),
       });
       debugPrint('Guest score saved to local DB for ${score.playerId}');
+      return false;
     } catch (e) {
       debugPrint('Failed to persist guest score locally: $e');
+      return false;
     }
   }
 
@@ -124,6 +121,7 @@ class ScoreService {
       for (final entry in grouped.entries) {
         final playerId = entry.key;
         final list = entry.value;
+        var migrated = true;
         for (final s in list) {
           try {
             final score = Score(
@@ -134,19 +132,84 @@ class ScoreService {
               losses: s['losses'] ?? 0,
               points: s['points'] ?? 0,
             );
-            await saveScore(score, loggedIn: false);
+            final saved = await saveScore(
+              score,
+              loggedIn: true,
+              updateLocalTotals: false,
+            );
+            migrated = migrated && saved;
           } catch (e) {
             debugPrint('Failed to upload cached row for $playerId: $e');
+            migrated = false;
           }
         }
-        // Clean up rows for this player after attempting upload
+        if (migrated) await db.deleteGuestScoresFor(playerId);
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final legacyKeys = prefs
+          .getKeys()
+          .where((key) => key.startsWith('guest_score_'))
+          .toList();
+      for (final key in legacyKeys) {
+        final raw = prefs.getString(key);
+        if (raw == null) continue;
+        var migrated = true;
         try {
-          await db.deleteGuestScoresFor(playerId);
-        } catch (_) {}
+          final cached = List<Map<String, dynamic>>.from(json.decode(raw));
+          for (final data in cached) {
+            final saved = await saveScore(
+              Score(
+                playerId: key.substring('guest_score_'.length),
+                playerName: data['playerName'] ?? 'Guest',
+                wins: data['wins'] ?? 0,
+                draws: data['draws'] ?? 0,
+                losses: data['losses'] ?? 0,
+                points: data['points'] ?? 0,
+              ),
+              loggedIn: true,
+            );
+            migrated = migrated && saved;
+          }
+          if (migrated) await prefs.remove(key);
+        } catch (e) {
+          debugPrint('Failed to migrate legacy guest cache $key: $e');
+        }
       }
     } catch (e) {
       debugPrint('Upload guest caches failed: $e');
     }
+  }
+
+  Future<void> recordOfflineMatch(String result) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      'offline_wins',
+      (prefs.getInt('offline_wins') ?? 0) + (result == 'win' ? 1 : 0),
+    );
+    await prefs.setInt(
+      'offline_losses',
+      (prefs.getInt('offline_losses') ?? 0) + (result == 'loss' ? 1 : 0),
+    );
+    await prefs.setInt(
+      'offline_draws',
+      (prefs.getInt('offline_draws') ?? 0) + (result == 'draw' ? 1 : 0),
+    );
+  }
+
+  Future<bool> migrateForFirstAccountSignIn(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'supabase_account_seen_$userId';
+    if (prefs.getBool(key) ?? false) return false;
+
+    await uploadAllGuestCaches();
+    await prefs.setBool(key, true);
+    return true;
+  }
+
+  Future<void> markAccountAsKnown(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('supabase_account_seen_$userId', true);
   }
 
   // Retrieve scores for a user
@@ -199,7 +262,11 @@ class ScoreService {
             losses: s['losses'] ?? 0,
             points: s['points'] ?? 0,
           );
-          await saveScore(score, loggedIn: true);
+          await saveScore(
+            score,
+            loggedIn: true,
+            updateLocalTotals: false,
+          );
         }
       }
       await prefs.remove(key);

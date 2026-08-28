@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
@@ -16,7 +17,6 @@ import 'board.dart';
 import 'competition_screen.dart';
 import 'service/score_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'service/supabase_compat.dart';
 import 'service/invite_service.dart';
 import 'friend_invite_screen.dart';
 import 'invite_match_screen.dart';
@@ -60,6 +60,7 @@ class TicTacToeGame extends FlameGame
   bool pendingMatchIsTournament = false;
   // Nullable fields for server-created AI matches removed.
   late final RouterComponent router;
+  bool routerReady = false;
   String lastMessage = '';
   String loggedInUser = '';
   String? myPlayerSymbol;
@@ -260,6 +261,16 @@ class TicTacToeGame extends FlameGame
     router.pushNamed('settings_$returnRoute');
   }
 
+  Future<void> refreshActiveProfile() async {
+    final profiles = <ProfileScreen>[];
+    for (final route in router.children) {
+      profiles.addAll(route.children.whereType<ProfileScreen>());
+    }
+    for (final profile in profiles) {
+      await profile.refreshFromSupabase();
+    }
+  }
+
   void startVsComputer(VsComputerMatchConfig config) {
     vsComputerConfig = config;
     router.pushReplacement(
@@ -324,35 +335,21 @@ class TicTacToeGame extends FlameGame
     // Ensure we have an authenticated user for Firestore rules that
     // require auth. Prefer existing sign-in; otherwise try anonymous.
     try {
-      final fbUser = FirebaseAuth.instance.currentUser;
-      if (fbUser == null) {
-        debugPrint('No Firebase user - anonymous sign-in disabled for now');
-        // DISABLED: Anonymous sign-in was interfering with provider sign-in flow
-        // try {
-        //   await FirebaseAuth.instance.signInAnonymously();
-        //   debugPrint(
-        //     'Anonymous sign-in succeeded: ${FirebaseAuth.instance.currentUser?.uid}',
-        //   );
-        // } catch (e) {
-        //   debugPrint('Anonymous sign-in failed: $e');
-        // }
+      final authUser = Supabase.instance.client.auth.currentUser;
+      if (authUser == null) {
+        debugPrint('No Supabase user - anonymous sign-in disabled for now');
+        // Anonymous sign-in remains disabled to preserve provider flow.
       } else {
-        debugPrint('Already signed in uid=${fbUser.uid}');
+        debugPrint('Already signed in uid=${authUser.id}');
       }
     } catch (e) {
-      debugPrint('Error checking/signing Firebase user: $e');
+      debugPrint('Error checking Supabase user: $e');
     }
     try {
-      final current = FirebaseAuth.instance.currentUser;
+      final current = Supabase.instance.client.auth.currentUser;
       if (current == null) {
         debugPrint('No current user - anonymous sign-in disabled');
-        // DISABLED: Anonymous sign-in was interfering with provider sign-in flow
-        // try {
-        //   await FirebaseAuth.instance.signInAnonymously();
-        //   debugPrint('Signed in anonymously for Firestore access');
-        // } catch (e) {
-        //   debugPrint('Anonymous sign-in failed: $e');
-        // }
+        // Anonymous sign-in remains disabled to preserve provider flow.
       }
     } catch (e) {
       debugPrint('Auth check failed: $e');
@@ -363,9 +360,9 @@ class TicTacToeGame extends FlameGame
     // NOTE: anonymous sign-in is disabled by default. Only attempt
     // uploading cached guest scores if there is an authenticated user.
     try {
-      final fbUser = FirebaseAuth.instance.currentUser;
-      if (fbUser != null && !fbUser.isAnonymous) {
-        await ScoreService().uploadAllGuestCaches();
+      final authUser = Supabase.instance.client.auth.currentUser;
+      if (authUser != null) {
+        await ScoreService().markAccountAsKnown(authUser.id);
       } else {
         debugPrint(
           'Skipping uploadAllGuestCaches: no authenticated user present (guest scores will remain local).',
@@ -433,6 +430,7 @@ class TicTacToeGame extends FlameGame
     );
 
     add(router);
+    routerReady = true;
 
     // preload common assets that the Competition screen and matchmaking UI
     try {
@@ -472,7 +470,6 @@ class TicTacToeGame extends FlameGame
 // Main menu screen
 class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
   TextComponent? scoreDisplay;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? scoreListener;
   GameTheme get theme => ThemeStore.current;
 
   // Theme-reactive components that need rebuilding on theme change
@@ -575,20 +572,15 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final chosen = prefs.getString('chosen_avatar') ?? '';
-      final showAvatar = chosen.isNotEmpty;
       Sprite? profileSprite;
-      if (showAvatar && chosen.isNotEmpty) {
-        final candidates = [
-          'assets/images/$chosen.png',
-          'images/$chosen.png',
-          '$chosen.png',
-        ];
-        for (final key in candidates) {
-          try {
-            profileSprite = await game.loadSprite(key);
-            break;
-          } catch (_) {}
-        }
+      final candidates = chosen.isNotEmpty
+          ? ['assets/images/$chosen.png', 'images/$chosen.png', '$chosen.png']
+          : ['profile.png', 'images/profile.png', 'assets/images/profile.png'];
+      for (final key in candidates) {
+        try {
+          profileSprite = await game.loadSprite(key);
+          break;
+        } catch (_) {}
       }
       if (profileSprite != null) {
         if (generation != null && generation != _themeBuildGeneration) return;

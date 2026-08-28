@@ -1,4 +1,6 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
+  show debugPrint, debugPrintStack, kIsWeb;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_compat.dart' as fb;
 
 // Platform specific implementations. Use the web impl when building for
@@ -27,6 +29,26 @@ class AuthHelper {
       return await platform_impl.signInWithGoogleImpl();
     } catch (e, stack) {
       debugPrint('AuthHelper.signInWithGoogle: platform impl threw: $e');
+      debugPrintStack(stackTrace: stack);
+      return null;
+    } finally {
+      _providerFlowInProgress = false;
+    }
+  }
+
+  Future<fb.UserCredential?> signInWithDiscord() async {
+    if (_providerFlowInProgress) return null;
+    _providerFlowInProgress = true;
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.discord,
+        redirectTo: kIsWeb
+            ? Uri.base.origin
+            : 'io.supabase.tictactoe://login-callback',
+      );
+      return fb.UserCredential(user: fb.FirebaseAuth.instance.currentUser);
+    } catch (e, stack) {
+      debugPrint('AuthHelper.signInWithDiscord failed: $e');
       debugPrintStack(stackTrace: stack);
       return null;
     } finally {

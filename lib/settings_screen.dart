@@ -74,7 +74,7 @@ class SettingsScreen extends Component with HasGameReference<TicTacToeGame> {
       RectangleComponent(
         size: game.size,
         position: Vector2.zero(),
-        paint: Paint()..color = theme.boardBackground,
+        paint: Paint()..color = theme.buttonBase,
       ),
     );
 

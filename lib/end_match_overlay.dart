@@ -11,6 +11,7 @@ class EndMatchOverlay extends PositionComponent {
   final VoidCallback onHome;
   final VoidCallback? onRestart;
   final GameTheme theme;
+  final String? scoreline;
 
   EndMatchOverlay({
     required this.didWin,
@@ -18,6 +19,7 @@ class EndMatchOverlay extends PositionComponent {
     required this.onNext,
     required this.onHome,
     required this.theme,
+    this.scoreline,
     this.showSignInPrompt = false,
     this.singleHomeButton = false,
     this.overrideMessage,
@@ -64,6 +66,16 @@ class EndMatchOverlay extends PositionComponent {
           textRenderer: TextPaint(style: smallTextStyle),
         ),
       );
+      if (scoreline != null) {
+        add(
+          TextComponent(
+            text: scoreline!,
+            anchor: Anchor.center,
+            position: Vector2(size.x / 2, size.y / 2 + 16),
+            textRenderer: TextPaint(style: smallTextStyle),
+          ),
+        );
+      }
     } else {
       add(
         TextComponent(
@@ -80,6 +92,16 @@ class EndMatchOverlay extends PositionComponent {
             text: defaultSmall,
             anchor: Anchor.topCenter,
             position: Vector2(size.x / 2, 62),
+            textRenderer: TextPaint(style: smallTextStyle),
+          ),
+        );
+      }
+      if (scoreline != null) {
+        add(
+          TextComponent(
+            text: scoreline!,
+            anchor: Anchor.topCenter,
+            position: Vector2(size.x / 2, 98),
             textRenderer: TextPaint(style: smallTextStyle),
           ),
         );

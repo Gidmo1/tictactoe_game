@@ -70,6 +70,18 @@ flutter run
 4. Copy `.env.example` to `.env` and add your project URL and anon key.
 5. Run `./run_with_env.ps1` from PowerShell. `.env` is ignored by Git.
 
+For web OAuth, set Supabase **Authentication → URL Configuration → Site URL**
+to the deployed app URL. Add the local Flutter web origin, such as
+`http://localhost:5000`, to **Redirect URLs** while developing. In Google and
+Discord developer consoles, use Supabase's callback URL
+(`https://YOUR_PROJECT.supabase.co/auth/v1/callback`) as the provider callback.
+
+### GitHub Actions Builds
+The workflow in `.github/workflows/flutter.yml` reads the repository secrets
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` and passes them to Flutter at build time.
+Push to `main`, open a pull request, or run the workflow manually from the
+GitHub Actions tab to test and build the app.
+
 ## 🎮 How to Play
 1. Launch the app
 2. Sign in with Google or play as Guest
