@@ -12,6 +12,10 @@ class EndMatchOverlay extends PositionComponent {
   final VoidCallback? onRestart;
   final GameTheme theme;
   final String? scoreline;
+  final String? scoreXText;
+  final String? scoreOText;
+  final Color? scoreXColor;
+  final Color? scoreOColor;
 
   EndMatchOverlay({
     required this.didWin,
@@ -20,6 +24,10 @@ class EndMatchOverlay extends PositionComponent {
     required this.onHome,
     required this.theme,
     this.scoreline,
+    this.scoreXText,
+    this.scoreOText,
+    this.scoreXColor,
+    this.scoreOColor,
     this.showSignInPrompt = false,
     this.singleHomeButton = false,
     this.overrideMessage,
@@ -66,13 +74,61 @@ class EndMatchOverlay extends PositionComponent {
           textRenderer: TextPaint(style: smallTextStyle),
         ),
       );
-      if (scoreline != null) {
+      if (scoreXText != null && scoreOText != null) {
+        add(
+          TextComponent(
+            text: scoreline ?? '0  -  0',
+            anchor: Anchor.center,
+            position: Vector2(size.x / 2, size.y / 2 + 16),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+        add(
+          TextComponent(
+            text: scoreXText!,
+            anchor: Anchor.centerRight,
+            position: Vector2(size.x / 2 - 10, size.y / 2 + 16),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                color: scoreXColor ?? smallTextStyle.color,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+        add(
+          TextComponent(
+            text: scoreOText!,
+            anchor: Anchor.centerLeft,
+            position: Vector2(size.x / 2 + 10, size.y / 2 + 16),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                color: scoreOColor ?? smallTextStyle.color,
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      } else if (scoreline != null) {
         add(
           TextComponent(
             text: scoreline!,
             anchor: Anchor.center,
             position: Vector2(size.x / 2, size.y / 2 + 16),
-            textRenderer: TextPaint(style: smallTextStyle),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                fontSize: 16,
+                height: 1.5,
+                letterSpacing: 1.2,
+              ),
+            ),
           ),
         );
       }
@@ -96,13 +152,61 @@ class EndMatchOverlay extends PositionComponent {
           ),
         );
       }
-      if (scoreline != null) {
+      if (scoreXText != null && scoreOText != null) {
+        add(
+          TextComponent(
+            text: scoreline ?? '0  -  0',
+            anchor: Anchor.center,
+            position: Vector2(size.x / 2, 110),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+        add(
+          TextComponent(
+            text: scoreXText!,
+            anchor: Anchor.centerRight,
+            position: Vector2(size.x / 2 - 10, 110),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                color: scoreXColor ?? smallTextStyle.color,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+        add(
+          TextComponent(
+            text: scoreOText!,
+            anchor: Anchor.centerLeft,
+            position: Vector2(size.x / 2 + 10, 110),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                color: scoreOColor ?? smallTextStyle.color,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        );
+      } else if (scoreline != null) {
         add(
           TextComponent(
             text: scoreline!,
             anchor: Anchor.topCenter,
             position: Vector2(size.x / 2, 98),
-            textRenderer: TextPaint(style: smallTextStyle),
+            textRenderer: TextPaint(
+              style: smallTextStyle.copyWith(
+                fontSize: 16,
+                height: 1.5,
+                letterSpacing: 1.2,
+              ),
+            ),
           ),
         );
       }

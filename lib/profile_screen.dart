@@ -17,6 +17,9 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
   late SpriteComponent avatar;
   late TextComponent nameText;
   late TextComponent statsText;
+  late TextComponent onlineDetailText;
+  late TextComponent offlineStatsText;
+  late TextComponent offlineDetailText;
   late _ProfileBackButton returnButton;
   ButtonComponent? _signInButton;
   StreamSubscription<AuthState>? _authSubscription;
@@ -133,8 +136,8 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     } catch (_) {}
 
     statsText = TextComponent(
-      text: 'W:$wins  L:$losses  D:$draws',
-      position: Vector2(game.size.x / 2, 290),
+      text: 'ONLINE MATCHES',
+      position: Vector2(game.size.x / 2, 286),
       anchor: Anchor.center,
       textRenderer: TextPaint(
         style: TextStyle(
@@ -146,27 +149,52 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     );
     add(statsText);
 
-    if (offlineWins + offlineLosses + offlineDraws > 0) {
-      add(
-        TextComponent(
-          text: 'OFFLINE  W:$offlineWins  L:$offlineLosses  D:$offlineDraws',
-          position: Vector2(game.size.x / 2, 314),
-          anchor: Anchor.center,
-          textRenderer: TextPaint(
-            style: TextStyle(
-              color: ThemeStore.current.gridColor,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
+    onlineDetailText = TextComponent(
+        text: 'W:$wins          L:$losses          D:$draws',
+        position: Vector2(game.size.x / 2, 316),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: ThemeStore.current.textColor,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
           ),
         ),
       );
-    }
+    add(onlineDetailText);
+
+    offlineStatsText = TextComponent(
+      text: 'OFFLINE MATCHES',
+      position: Vector2(game.size.x / 2, 364),
+      anchor: Anchor.center,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: ThemeStore.current.gridColor,
+          fontSize: 14,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(offlineStatsText);
+
+    offlineDetailText = TextComponent(
+      text: 'W:$offlineWins          L:$offlineLosses          D:$offlineDraws',
+      position: Vector2(game.size.x / 2, 394),
+      anchor: Anchor.center,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: ThemeStore.current.textColor,
+          fontSize: 17,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(offlineDetailText);
 
     if (Supabase.instance.client.auth.currentUser == null) {
       _signInButton = ButtonComponent(
         label: 'SIGN IN',
-        position: Vector2(game.size.x / 2, 350),
+        position: Vector2(game.size.x / 2, 445),
         size: Vector2(150, 42),
         theme: ThemeStore.current,
         onPressed: () => game.overlays.add('auth_gate'),
@@ -184,8 +212,8 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
           position: Vector2(
             game.size.x / 2,
             signedOut || offlineWins + offlineLosses + offlineDraws > 0
-                ? 405
-                : 330,
+                ? 500
+                : 470,
           ),
           anchor: Anchor.center,
           textRenderer: TextPaint(
@@ -271,9 +299,25 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
         if (profile != null) {
           playerName = (profile['username'] as String?) ?? playerName;
           league = (profile['tier'] as String?) ?? league;
-          wins = profile['wins'] ?? wins;
-          losses = profile['losses'] ?? losses;
-          draws = profile['draws'] ?? draws;
+
+          final onlineScores = await Supabase.instance.client
+              .from('scores')
+              .select('result, opponent_type')
+              .eq('player_id', user.id)
+              .neq('opponent_type', 'computer');
+          wins = 0;
+          losses = 0;
+          draws = 0;
+          for (final score in onlineScores) {
+            switch (score['result']) {
+              case 'win':
+                wins++;
+              case 'loss':
+                losses++;
+              case 'draw':
+                draws++;
+            }
+          }
 
           // Save new data back to shared preferences
           await prefs.setString('playerName', playerName);
@@ -323,7 +367,11 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     await _loadPlayerData();
     if (!isMounted) return;
     nameText.text = playerName;
-    statsText.text = 'W:$wins  L:$losses  D:$draws';
+    statsText.text = 'ONLINE MATCHES';
+    onlineDetailText.text = 'W:$wins          L:$losses          D:$draws';
+    offlineStatsText.text = 'OFFLINE MATCHES';
+    offlineDetailText.text =
+      'W:$offlineWins          L:$offlineLosses          D:$offlineDraws';
   }
 }
 

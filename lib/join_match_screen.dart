@@ -64,8 +64,8 @@ class JoinMatchScreen extends Component with HasGameReference<TicTacToeGame> {
       return;
     }
 
-    if (code.length != 6) {
-      _showTransientMessage('Code must be 6 chars');
+    if (code.length != 8) {
+      _showTransientMessage('Code must be 8 chars');
       return;
     }
     final matchId = code.toUpperCase();

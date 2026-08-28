@@ -69,6 +69,8 @@ flutter run
 3. Enable the desired authentication providers in Supabase Authentication.
 4. Copy `.env.example` to `.env` and add your project URL and anon key.
 5. Run `./run_with_env.ps1` from PowerShell. `.env` is ignored by Git.
+   For a connected release APK, run `./build_release_with_env.ps1` and install
+   `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` on a Samsung A16.
 
 For web OAuth, set Supabase **Authentication → URL Configuration → Site URL**
 to the deployed app URL. Add the local Flutter web origin, such as

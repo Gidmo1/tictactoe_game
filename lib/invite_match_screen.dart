@@ -14,6 +14,7 @@ import 'components/auth_gate_component.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/board_layout.dart';
+import 'game_themes/theme.dart';
 import 'service/supabase_compat.dart' as fb;
 import 'service/competition_service.dart';
 import 'service/score_service.dart';
@@ -21,6 +22,7 @@ import 'models/score.dart';
 import 'service/supabase_match_service.dart';
 import 'tictactoe.dart';
 import 'service/guest_service.dart';
+import 'components/ornate_overlay_panel.dart';
 
 class TicTacToeInviteScreen extends Component {
   final String matchId;
@@ -53,6 +55,16 @@ class TicTacToeInviteScreen extends Component {
   final Random random = Random();
   final List<Component> confettiPieces = [];
   bool _addedReturnButton = false;
+  bool _moveInFlight = false;
+  bool _endOverlayShown = false;
+  bool _scoreRecorded = false;
+  bool _matchReady = false;
+  _WinningLine? _winningLine;
+  TextComponent? _inviteCodeText;
+  late TextComponent _xScoreText;
+  late TextComponent _scoreValueText;
+  late TextComponent _oScoreText;
+  _MatchLoadingModal? _loading;
 
   TicTacToeInviteScreen({required this.matchId});
 
@@ -64,14 +76,24 @@ class TicTacToeInviteScreen extends Component {
     final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
     layout = BoardLayout(canvasSize);
 
-    // Background
-    final background = SpriteComponent()
-      ..sprite =
-          await (findGame()?.loadSprite('playscreen.png') ??
-              Sprite.load('playscreen.png'))
-      ..size = canvasSize
-      ..position = Vector2.zero();
+    final background = RectangleComponent(
+      size: canvasSize,
+      position: Vector2.zero(),
+      paint: Paint()..color = ThemeStore.current.boardBackground,
+    )..priority = -2;
     add(background);
+
+    final inviteGame = findGame();
+    final inviteCode = inviteGame is TicTacToeGame
+      ? inviteGame.pendingInviteCode
+      : null;
+    add(_InviteBoardGrid(layout: layout, theme: ThemeStore.current));
+    _loading = _MatchLoadingModal(
+      size: canvasSize,
+      theme: ThemeStore.current,
+      inviteCode: inviteCode,
+    )..priority = 100;
+    add(_loading!);
 
     // Message text
     final titleY = layout.boardY - layout.cellHeight * 0.5;
@@ -88,6 +110,46 @@ class TicTacToeInviteScreen extends Component {
       ),
     );
     add(messageText);
+
+    _xScoreText = TextComponent(
+      text: 'X',
+      position: Vector2(canvasSize.x / 2 - 76, 104),
+      anchor: Anchor.centerRight,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: ThemeStore.current.xColor,
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    _scoreValueText = TextComponent(
+      text: '0  -  0',
+      position: Vector2(canvasSize.x / 2, 104),
+      anchor: Anchor.center,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: ThemeStore.current.textColor,
+          fontSize: 25,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    _oScoreText = TextComponent(
+      text: 'O',
+      position: Vector2(canvasSize.x / 2 + 76, 104),
+      anchor: Anchor.centerLeft,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: ThemeStore.current.oColor,
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(_xScoreText);
+    add(_scoreValueText);
+    add(_oScoreText);
 
     final topPadding = max(layout.boardY * 0.06, 32.0);
     final nameFontSize = layout.screenSize.x * 0.04;
@@ -666,7 +728,6 @@ class TicTacToeInviteScreen extends Component {
 
   void _applySupabaseMatch(Map<String, dynamic> data) {
     if (data.isEmpty) return;
-
     final boardData = data['board'];
     if (boardData is List) {
       final flattened = <String>[];
@@ -693,6 +754,26 @@ class TicTacToeInviteScreen extends Component {
     final status = (data['status'] ?? 'waiting').toString();
     final winnerId = (data['winner'] ?? '').toString();
     gameOver = status == 'finished' || status == 'abandoned';
+    final xScore = status == 'finished' && winnerId == playerXUID ? 1 : 0;
+    final oScore = status == 'finished' && winnerId == playerOUID ? 1 : 0;
+    _scoreValueText.text = '$xScore  -  $oScore';
+    _matchReady = status == 'active' || gameOver;
+    if (_matchReady) {
+      _loading?.removeFromParent();
+      _loading = null;
+    }
+    final gameRef = findGame();
+    final userId = SupabaseMatchService().userId;
+    final mySymbol = userId == playerXUID
+        ? 'X'
+        : (userId == playerOUID ? 'O' : null);
+    if (gameRef is TicTacToeGame && mySymbol != null) {
+      gameRef.myPlayerSymbol = mySymbol;
+    }
+    if (status != 'waiting') {
+      _inviteCodeText?.removeFromParent();
+      _inviteCodeText = null;
+    }
 
     if (status == 'waiting') {
       messageText.text = 'Waiting for opponent...';
@@ -700,27 +781,100 @@ class TicTacToeInviteScreen extends Component {
       final didWin = winnerId.isNotEmpty && winnerId == SupabaseMatchService().userId;
       final didDraw = winnerId.isEmpty && status == 'finished';
       messageText.text = didDraw ? 'Draw!' : (didWin ? 'You win!' : 'You lose!');
-      _addEndMatchOverlaySafely(
-        findGame(),
-        didWin: didWin,
-        didDraw: didDraw,
-        overrideMessage: messageText.text,
-      );
+      if (winnerId.isNotEmpty) {
+        _showWinningLine();
+      }
+      _recordOnlineScore(winnerId: winnerId, didDraw: didDraw);
+      if (!_endOverlayShown) {
+        _endOverlayShown = true;
+        _addEndMatchOverlaySafely(
+          findGame(),
+          didWin: didWin,
+          didDraw: didDraw,
+          overrideMessage: messageText.text,
+          scoreXText: 'X',
+          scoreOText: 'O',
+          scoreline: '$xScore  -  $oScore',
+          scoreXColor: ThemeStore.current.xColor,
+          scoreOColor: ThemeStore.current.oColor,
+        );
+
+      }
     } else {
-      messageText.text = currentPlayer == SupabaseMatchService().userId
+      messageText.text = currentPlayer == mySymbol
           ? 'Your turn'
           : 'Opponent\'s turn';
-      final symbol = findGame() is TicTacToeGame
-          ? (findGame() as TicTacToeGame).myPlayerSymbol
-          : null;
-      if (symbol != null) {
-        messageText.text = currentPlayer == symbol ? 'Your turn' : 'Opponent\'s turn';
+    }
+  }
+
+  void _showWinningLine() {
+    if (_winningLine != null) return;
+    const winningPatterns = [
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8],
+      [0, 3, 6],
+      [1, 4, 7],
+      [2, 5, 8],
+      [0, 4, 8],
+      [2, 4, 6],
+    ];
+    for (final pattern in winningPatterns) {
+      if (board[pattern[0]].isNotEmpty &&
+          board[pattern[0]] == board[pattern[1]] &&
+          board[pattern[1]] == board[pattern[2]]) {
+        _winningLine = _WinningLine(
+          start: _cellCenter(pattern[0]),
+          end: _cellCenter(pattern[2]),
+          color: board[pattern[0]] == 'X'
+              ? ThemeStore.current.xColor
+              : ThemeStore.current.oColor,
+        );
+        add(_winningLine!);
+        return;
+      }
+    }
+  }
+
+  Vector2 _cellCenter(int index) => Vector2(
+    layout.boardX + (index % 3 + 0.5) * layout.cellWidth,
+    layout.boardY + (index ~/ 3 + 0.5) * layout.cellHeight,
+  );
+
+  Future<void> _recordOnlineScore({
+    required String winnerId,
+    required bool didDraw,
+  }) async {
+    if (_scoreRecorded) return;
+    final userId = SupabaseMatchService().userId;
+    if (userId == null) return;
+
+    final result = didDraw ? 'draw' : (winnerId == userId ? 'win' : 'loss');
+    final saved = await ScoreService().saveScore(
+      Score(
+        playerId: userId,
+        playerName: 'Online player',
+        wins: result == 'win' ? 1 : 0,
+        losses: result == 'loss' ? 1 : 0,
+        draws: result == 'draw' ? 1 : 0,
+        points: result == 'win' ? 3 : (result == 'draw' ? 1 : 0),
+      ),
+      loggedIn: true,
+      opponentType: 'friend',
+    );
+    _scoreRecorded = saved;
+    if (saved) {
+      final gameRef = findGame();
+      if (gameRef is TicTacToeGame) {
+        await gameRef.refreshActiveProfile();
       }
     }
   }
 
   void handleTap(int row, int col) async {
-    if (gameOver || board[row * 3 + col] != '') return;
+    if (!_matchReady || gameOver || _moveInFlight || board[row * 3 + col] != '') {
+      return;
+    }
 
     final service = SupabaseMatchService();
     if (service.userId == null) return;
@@ -728,10 +882,13 @@ class TicTacToeInviteScreen extends Component {
     final symbol = gameRef is TicTacToeGame ? gameRef.myPlayerSymbol : null;
     if (symbol == null || currentPlayer != symbol) return;
 
+    _moveInFlight = true;
     try {
       await service.submitMove(matchId: matchId, row: row, col: col);
     } catch (error) {
       debugPrint('Supabase submitMove failed: $error');
+    } finally {
+      _moveInFlight = false;
     }
     return;
 
@@ -817,6 +974,11 @@ class TicTacToeInviteScreen extends Component {
     required bool didWin,
     required bool didDraw,
     String? overrideMessage,
+    String? scoreline,
+    String? scoreXText,
+    String? scoreOText,
+    Color? scoreXColor,
+    Color? scoreOColor,
   }) async {
     int attempts = 0;
     int delayMs = 80;
@@ -842,6 +1004,11 @@ class TicTacToeInviteScreen extends Component {
           didWin: didWin,
           didDraw: didDraw,
           overrideMessage: overrideMessage,
+          scoreline: scoreline,
+          scoreXText: scoreXText,
+          scoreOText: scoreOText,
+          scoreXColor: scoreXColor,
+          scoreOColor: scoreOColor,
           onNext: () async {
             // Toggle starting symbol preference so rematches alternate
             try {
@@ -990,6 +1157,11 @@ class TicTacToeInviteScreen extends Component {
         didWin: didWin,
         didDraw: didDraw,
         overrideMessage: overrideMessage,
+        scoreline: scoreline,
+        scoreXText: scoreXText,
+        scoreOText: scoreOText,
+        scoreXColor: scoreXColor,
+        scoreOColor: scoreOColor,
         onNext: () {},
         onHome: () {
           final authUser = fb.FirebaseAuth.instance.currentUser;
@@ -1113,6 +1285,139 @@ class TicTacToeInviteScreen extends Component {
   }
 }
 
+class _WinningLine extends PositionComponent {
+  final Vector2 start;
+  final Vector2 end;
+  final Color color;
+
+  _WinningLine({required this.start, required this.end, required this.color})
+    : super(priority: 5);
+
+  @override
+  void render(Canvas canvas) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(start.toOffset(), end.toOffset(), paint);
+  }
+}
+
+class _MatchLoadingModal extends PositionComponent {
+  final Vector2 screenSize;
+  final GameTheme theme;
+  final String? inviteCode;
+
+  _MatchLoadingModal({required Vector2 size, required this.theme, this.inviteCode})
+    : screenSize = size,
+      super(size: size, position: Vector2.zero(), priority: 100);
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    add(
+      RectangleComponent(
+        size: screenSize,
+        paint: Paint()..color = const Color.fromARGB(165, 0, 0, 0),
+      ),
+    );
+
+    final panelSize = Vector2(
+      screenSize.x * 0.78,
+      (screenSize.y * 0.32).clamp(190.0, 240.0),
+    );
+    final panel = OrnateOverlayPanel(size: panelSize, theme: theme)
+      ..position = screenSize / 2
+      ..anchor = Anchor.center;
+    add(panel);
+    add(
+      TextComponent(
+        text: 'WAITING FOR OPPONENT',
+        position: screenSize / 2 - Vector2(0, 34),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: theme.contrastColor,
+            fontSize: 17,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+    add(
+      TextComponent(
+        text: inviteCode == null || inviteCode!.isEmpty
+            ? 'Preparing the match...'
+            : 'Invite code: $inviteCode',
+        position: screenSize / 2 + Vector2(0, 8),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(color: theme.contrastColor, fontSize: 14),
+        ),
+      ),
+    );
+    add(
+      _LoadingDots(
+        position: screenSize / 2 + Vector2(0, 48),
+        color: theme.gridColor,
+      ),
+    );
+  }
+}
+
+class _LoadingDots extends PositionComponent {
+  final Color color;
+  double _elapsed = 0;
+
+  _LoadingDots({required Vector2 position, required this.color})
+    : super(position: position, size: Vector2(64, 16), anchor: Anchor.center);
+
+  @override
+  void update(double dt) {
+    _elapsed += dt;
+    super.update(dt);
+  }
+
+  @override
+  void render(Canvas canvas) {
+    for (var index = 0; index < 3; index++) {
+      final pulse = ((sin(_elapsed * 4 - index * 0.7) + 1) / 2);
+      final paint = Paint()..color = color.withValues(alpha: 0.35 + pulse * 0.65);
+      canvas.drawCircle(Offset(20 + index * 12, 8), 4, paint);
+    }
+  }
+}
+
+class _InviteBoardGrid extends PositionComponent {
+  final BoardLayout layout;
+  final GameTheme theme;
+
+  _InviteBoardGrid({required this.layout, required this.theme})
+    : super(
+        position: Vector2(layout.boardX, layout.boardY),
+        size: Vector2(layout.cellWidth * 3, layout.cellHeight * 3),
+        priority: 0,
+      );
+
+  @override
+  void render(Canvas canvas) {
+    final fill = Paint()..color = theme.boardBackground.withValues(alpha: 0.72);
+    canvas.drawRect(size.toRect(), fill);
+
+    final line = Paint()
+      ..color = theme.gridColor
+      ..strokeWidth = 3
+      ..style = PaintingStyle.stroke;
+    for (var index = 0; index <= 3; index++) {
+      final x = index * layout.cellWidth;
+      final y = index * layout.cellHeight;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.y), line);
+      canvas.drawLine(Offset(0, y), Offset(size.x, y), line);
+    }
+    super.render(canvas);
+  }
+}
+
 // CELL COMPONENT
 class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
   final int row;
@@ -1151,8 +1456,12 @@ class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
 
     markSprite?.removeFromParent();
     final markSize = Vector2.all(min(size.x, size.y) * 0.75);
+    final themedSprite = await ThemeStore.current.symbolSprite(
+      sym,
+      markSize.x,
+    );
     markSprite = SpriteComponent()
-      ..sprite = await Sprite.load(sym == 'X' ? 'X.png' : 'O.png')
+      ..sprite = themedSprite
       ..size = markSize
       ..position = size / 2
       ..anchor = Anchor.center;

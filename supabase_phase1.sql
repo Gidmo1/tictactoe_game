@@ -144,6 +144,15 @@ create table if not exists public.matches (
   finished_at timestamptz
 );
 
+-- Migrate matches created before invite codes were introduced.
+alter table public.matches add column if not exists invite_code text;
+update public.matches
+set invite_code = upper(substr(md5(id::text), 1, 8))
+where invite_code is null or trim(invite_code) = '';
+create unique index if not exists matches_invite_code_idx
+  on public.matches (invite_code);
+alter table public.matches alter column invite_code set not null;
+
 alter table public.matches enable row level security;
 
 drop policy if exists "Participants can read matches" on public.matches;

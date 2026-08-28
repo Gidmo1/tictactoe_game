@@ -63,6 +63,7 @@ class TicTacToeGame extends FlameGame
   String lastMessage = '';
   String loggedInUser = '';
   String? myPlayerSymbol;
+  String? pendingInviteCode;
   String currentRoute = 'menu';
   VsComputerMatchConfig? vsComputerConfig;
 
@@ -144,6 +145,14 @@ class TicTacToeGame extends FlameGame
       overlays.remove('confirmation');
     } catch (_) {}
     _handleMusicForRoute(routeName);
+    if (routeName == 'profile') {
+      Future<void>(() async {
+        for (var attempt = 0; attempt < 5; attempt++) {
+          await Future.delayed(const Duration(milliseconds: 80));
+          await refreshActiveProfile();
+        }
+      });
+    }
     // Show a quick Flutter overlay to avoid a black screen when entering
     // the Competition route. It will be removed by the CompetitionScreen
     // itself once the Flame background sprite is ready.
@@ -154,13 +163,6 @@ class TicTacToeGame extends FlameGame
         overlays.remove('competition_fallback');
       }
     } catch (_) {}
-    // A pending Supabase match is rendered directly by the invite board route.
-    // The former Firebase waiting lobby must not be layered over that board.
-    if (routeName == 'invite' && pendingMatchId != null) {
-      children.whereType<FriendLobbyComponent>().forEach(
-        (component) => component.removeFromParent(),
-      );
-    }
     debugPrint(
       'handleRouteChange: route=$routeName pendingTournamentAutoSearch=$pendingTournamentAutoSearch ts=${DateTime.now().toIso8601String()}',
     );
@@ -432,7 +434,6 @@ class TicTacToeGame extends FlameGame
     // preload common assets that the Competition screen and matchmaking UI
     try {
       await images.load('leaderboard_background.png');
-      await images.load('playscreen.png');
       await images.load('loading.png');
       await images.load('background.png');
       await images.load('retry.png');

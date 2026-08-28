@@ -19,6 +19,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'overlays/edit_profile.dart';
 import 'supabase.dart';
 
+const inviteCodeLength = 8;
+
 void _startProviderSignIn(
   BuildContext context,
   TicTacToeGame game,
@@ -41,7 +43,6 @@ void _startProviderSignIn(
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
   await initializeSupabase();
   await Flame.device.fullScreen();
   await Flame.device.setPortraitUpOnly();
@@ -54,6 +55,7 @@ void main() async {
     'background_music.mp3',
   ]);
   await ThemeStore.init();
+  runApp(const MyApp());
 }
 
 class DeepLinkHandler extends StatefulWidget {
@@ -100,7 +102,7 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
         setState(() => _notice = 'Match unavailable or already joined');
         return;
       }
-      widget.game.joinMatch(joinedId);
+      widget.game.openMatchWithId(joinedId, isCreator: false);
       widget.game.overlays.remove('code_input');
     } catch (_) {
       setState(() => _notice = 'Server error. Tap Join to try again.');
@@ -111,41 +113,58 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeStore.current;
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 360),
-        padding: const EdgeInsets.all(20),
-        color: Colors.black87,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+        decoration: BoxDecoration(
+          color: theme.boardBackground,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: theme.gridColor.withValues(alpha: 0.6)),
+          boxShadow: const [
+            BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 8)),
+          ],
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               'JOIN MATCH',
-              style: TextStyle(color: Colors.white, fontSize: 20),
+              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _controller,
               autofocus: true,
-              maxLength: 6,
+              maxLength: inviteCodeLength,
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp('[A-Z2-9]')),
+                FilteringTextInputFormatter.allow(RegExp('[A-Z0-9]')),
               ],
               decoration: const InputDecoration(
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: Colors.white12,
                 counterText: '',
+                hintText: 'INVITE CODE',
+                hintStyle: TextStyle(color: Colors.white54),
+                border: OutlineInputBorder(),
               ),
+              style: const TextStyle(color: Colors.white, letterSpacing: 3),
               onSubmitted: (_) => _tryJoin(),
             ),
             if (_notice != null)
               Text(_notice!, style: const TextStyle(color: Colors.orange)),
             const SizedBox(height: 12),
-            ElevatedButton(
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: theme.textColor,
+                backgroundColor: theme.buttonBase,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
               onPressed: _busy ? null : _tryJoin,
               child: _busy
                   ? const CircularProgressIndicator()
-                  : const Text('JOIN'),
+                  : const Text('ENTER MATCH'),
             ),
             TextButton(
               onPressed: () => widget.game.overlays.remove('code_input'),

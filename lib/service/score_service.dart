@@ -21,8 +21,13 @@ class ScoreService {
     final willBeLoggedIn = currentUser != null;
 
     try {
+            if (opponentType == 'computer') {
+              await recordOfflineMatch(_scoreResult(score));
+              return false;
+            }
+
       if (!willBeLoggedIn) throw StateError('No authenticated Supabase user');
-      await Supabase.instance.client.rpc(
+      final profile = await Supabase.instance.client.rpc(
         'record_score',
         params: {
           'score_result': _scoreResult(score),
@@ -32,6 +37,13 @@ class ScoreService {
         },
       );
       debugPrint('Score saved to Supabase for $effectivePlayerId');
+
+      if (profile is Map<String, dynamic>) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('wins', (profile['wins'] as num?)?.toInt() ?? 0);
+        await prefs.setInt('losses', (profile['losses'] as num?)?.toInt() ?? 0);
+        await prefs.setInt('draws', (profile['draws'] as num?)?.toInt() ?? 0);
+      }
 
       // Remove any local cache for the original score.playerId (guest) if present
       try {
