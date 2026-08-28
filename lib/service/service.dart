@@ -1,5 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'supabase_compat.dart'
+    show CollectionReference, FirebaseFirestore, FirebaseFunctions;
 import '../models/user.dart';
 import '../models/score.dart';
 

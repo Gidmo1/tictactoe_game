@@ -4,7 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 //import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart' hide Route;
-import 'package:cloud_functions/cloud_functions.dart';
+import 'service/supabase_compat.dart';
 //import 'package:tictactoe_game/settings_screen.dart';
 import 'tictactoe.dart';
 import 'service/guest_service.dart';

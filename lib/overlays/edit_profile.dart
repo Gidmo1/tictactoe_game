@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tictactoe_game/service/local_db.dart';
 import 'package:tictactoe_game/service/guest_service.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import '../service/supabase_compat.dart' as fb;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/tictactoe.dart';
 import 'package:flame/components.dart';

@@ -2,16 +2,15 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flame/game.dart';
 import 'package:flame/components.dart';
 import 'components/auth_gate_component.dart';
 import 'tictactoe.dart';
 import 'service/link_service.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'service/guest_service.dart';
+import 'service/supabase_compat.dart';
+import 'service/supabase_compat.dart' as compat;
 import 'settings_screen.dart';
 import 'package:flame/flame.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
@@ -20,10 +19,18 @@ import 'service/auth_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'overlays/edit_profile.dart';
 
+const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    throw StateError(
+      'Missing SUPABASE_URL or SUPABASE_ANON_KEY build definitions.',
+    );
+  }
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
 
   // Initialize Flame and audio
   await Flame.device.fullScreen();
@@ -122,18 +129,12 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
 
     setState(() => _busy = true);
     try {
-      final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
-      final callable = functions.httpsCallable('joinMatch');
-
       final payload = <String, dynamic>{'matchId': matchId};
-      final fbUser = FirebaseAuth.instance.currentUser;
-      if (fbUser == null) {
-        final pid = await GuestService.getOrCreateGuestId();
-        payload['playerId'] = pid;
-      }
-
-      final res = await callable.call(payload);
-      final data = res.data as Map<String, dynamic>? ?? {};
+      final response = await Supabase.instance.client.functions.invoke(
+        'join-match',
+        body: payload,
+      );
+      final data = response.data as Map<String, dynamic>? ?? {};
 
       if (data['alreadyHasOpponent'] == true) {
         setState(() => _notice = 'Match already has an opponent');
@@ -626,7 +627,7 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
                                 } catch (_) {}
                               });
 
-                          StreamSubscription<User?>? sub;
+                          StreamSubscription<compat.User?>? sub;
                           sub = FirebaseAuth.instance.authStateChanges().listen(
                             (user) {
                               if (user != null) {

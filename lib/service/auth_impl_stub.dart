@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'supabase_compat.dart' as fb;
 
 /// Stub implementation used on platforms that don't have a native
 /// Google sign-in implementation configured. This ensures the app

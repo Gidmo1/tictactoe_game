@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'supabase_compat.dart';
+import 'supabase_compat.dart' as fb;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:tictactoe_game/models/competition.dart';
 
@@ -32,8 +30,10 @@ class CompetitionService {
     return ((diff - date.weekday + 10) / 7).floor();
   }
 
-  CollectionReference<Map<String, dynamic>> _entriesRef(String weekId) =>
-      _db.collection('competitions').doc(weekId).collection('entries');
+  CollectionReference<Map<String, dynamic>> _entriesRef(String weekId) => _db
+      .collection<Map<String, dynamic>>('competitions')
+      .doc(weekId)
+      .collection('entries');
 
   // Wait for a signed-in user and refresh their ID token
   Future<fb.User?> waitForSignIn({

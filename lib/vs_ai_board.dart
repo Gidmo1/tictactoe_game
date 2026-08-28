@@ -8,23 +8,25 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tictactoe_game/confirmation_overlay.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
+import 'package:tictactoe_game/components/ornate_overlay_panel.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/board_layout.dart';
 import 'package:tictactoe_game/components/button.dart';
 import 'package:tictactoe_game/game_themes/theme.dart';
 import 'package:tictactoe_game/game_themes/theme_board.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
-import 'overlays/auth_overlay.dart';
 import 'ai.dart';
 import 'models/user.dart' as app_user;
 import 'service/guest_service.dart';
 import 'service/score_service.dart';
 import 'models/score.dart';
+import 'vs_computer_match_config.dart';
+import 'tic_tac_toe_rules.dart';
 
 class TicTacToeVsAI extends Component {
+  final VsComputerMatchConfig config;
   String humanPlayer = 'X';
   String aiPlayer = 'O';
   String currentPlayer = 'X';
@@ -32,33 +34,105 @@ class TicTacToeVsAI extends Component {
   bool gameOver = false;
 
   late final BoardLayout layout;
+  bool _boardReady = false;
   app_user.User loggedInUser;
 
   late TicTacToeAI ai;
   late TextComponent scoreText;
   late SpriteComponent humanIcon;
   late SpriteComponent aiIcon;
-  late TextComponent levelText;
+  late TextComponent matchText;
 
-  int currentLevel = 1;
+  int currentRound = 1;
+  int humanWins = 0;
+  int aiWins = 0;
+  int draws = 0;
   bool confettiRunning = false;
   final Random random = Random();
   final List<Component> confettiPieces = [];
-  // Tunable AI delays (ms): aiReactionDelayMs and aiStartDelayMs.
-  int aiReactionDelayMs = 500;
-  int aiStartDelayMs = 0;
+  // A relaxed match gives the player a little more time between moves.
+  int get aiReactionDelayMs => config.difficulty == 1 ? 650 : 450;
+
+  int get aiLevel => config.difficulty == 1
+      ? 1
+      : config.difficulty == 2
+      ? 10
+      : 50;
 
   // Active theme (symbols + skin) read from the sync global cache.
-  GameTheme theme = GameThemes.classic;
+  GameTheme theme = ThemeStore.current;
+  bool _themeDirty = false;
+  RectangleComponent? _background;
+  final List<Component> _themeBoardComponents = [];
+  final List<ButtonComponent> _themeButtons = [];
 
   // Store references to current overlay components so onHome can clean them up
   EndMatchOverlay? currentEndMatchOverlay;
-  RectangleComponent? currentDimOverlay;
+  InputBlockingDim? currentDimOverlay;
 
-  List<List<String>> board = List.generate(3, (_) => List.filled(3, ''));
+  late List<List<String>> board;
 
-  TicTacToeVsAI({app_user.User? loggedInUser})
-    : loggedInUser =
+  @override
+  void onMount() {
+    super.onMount();
+    if (theme.id != ThemeStore.current.id) {
+      theme = ThemeStore.current;
+      _refreshTheme();
+    }
+  }
+
+  @override
+  void onRemove() {
+    super.onRemove();
+  }
+
+  bool get themeNeedsRefresh => _themeDirty;
+
+  void _onThemeChanged() {
+    if (theme.id == ThemeStore.current.id) return;
+    _themeDirty = true;
+    theme = ThemeStore.current;
+    _refreshTheme();
+  }
+
+  Future<void> _refreshTheme() async {
+    if (_background == null) return;
+    _themeDirty = false;
+    _background!.paint.color = theme.boardBackground;
+    for (final component in _themeBoardComponents) {
+      component.removeFromParent();
+    }
+    _themeBoardComponents
+      ..clear()
+      ..addAll(themedBoardComponents(layout, theme));
+    for (final component in _themeBoardComponents) {
+      add(component);
+    }
+    for (final button in _themeButtons) {
+      button.updateTheme(theme);
+    }
+    try {
+      await applySymbolSettings();
+      for (final cell in children.whereType<TicTacToeCell>()) {
+        final player = board[cell.row][cell.col];
+        if (player.isNotEmpty) cell.mark(player);
+      }
+    } catch (_) {}
+  }
+
+  TicTacToeVsAI({VsComputerMatchConfig? config, app_user.User? loggedInUser})
+    : config =
+          config ??
+          const VsComputerMatchConfig(
+            difficulty: 2,
+            rounds: 1,
+            humanPlayer: 'X',
+          ),
+      humanIsX = (config?.humanPlayer ?? 'X') == 'X',
+      humanPlayer = config?.humanPlayer ?? 'X',
+      aiPlayer = (config?.humanPlayer ?? 'X') == 'X' ? 'O' : 'X',
+      currentPlayer = config?.humanPlayer ?? 'X',
+      loggedInUser =
           loggedInUser ??
           app_user.User(
             id: '',
@@ -66,43 +140,61 @@ class TicTacToeVsAI extends Component {
             providerId: '',
             providerName: '',
           );
+  @override
+  bool containsLocalPoint(Vector2 point) => true;
+
+  @override
+  void onTapDown(TapDownEvent event) {
+    if (!_boardReady || board.isEmpty) return;
+    final point = event.localPosition;
+    final boardRight = layout.boardX + layout.cellWidth * config.gridSize;
+    final boardBottom = layout.boardY + layout.cellHeight * config.gridSize;
+    if (point.x < layout.boardX ||
+        point.x >= boardRight ||
+        point.y < layout.boardY ||
+        point.y >= boardBottom) {
+      return;
+    }
+    final col = ((point.x - layout.boardX) / layout.cellWidth).floor();
+    final row = ((point.y - layout.boardY) / layout.cellHeight).floor();
+    handleTap(row, col);
+    event.continuePropagation = false;
+  }
 
   @override
   Future<void> onLoad() async {
+    currentPlayer = humanPlayer;
     ai = TicTacToeAI();
     final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
-    layout = BoardLayout(canvasSize);
-
-    // Load AI difficulty from local prefs
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      currentLevel = prefs.getInt('ai_level') ?? 1;
-      if (currentLevel < 1) currentLevel = 1;
-      // Load tuned delays if present. Keep sensible defaults otherwise.
-      aiReactionDelayMs =
-          prefs.getInt('ai_reaction_delay_ms') ?? aiReactionDelayMs;
-      aiStartDelayMs = prefs.getInt('ai_start_delay_ms') ?? aiStartDelayMs;
-    } catch (_) {
-      currentLevel = 1;
-    }
+    layout = BoardLayout(canvasSize, gridSize: config.gridSize);
+    board = List.generate(
+      config.gridSize,
+      (_) => List.filled(config.gridSize, ''),
+    );
+    _boardReady = true;
 
     theme = ThemeStore.current;
 
     // Background + board (themed solid + themed grid)
-    add(RectangleComponent(
-      size: canvasSize, position: Vector2.zero(),
+    _background = RectangleComponent(
+      size: canvasSize,
+      position: Vector2.zero(),
       paint: Paint()..color = theme.boardBackground,
-    ));
-    for (final piece in themedBoardComponents(layout, theme)) {
+    );
+    add(_background!);
+    _themeBoardComponents.addAll(themedBoardComponents(layout, theme));
+    for (final piece in _themeBoardComponents) {
       add(piece);
     }
 
     try {
-      final iconSize = layout.cellHeight * 0.4;
+      // Header icons stay readable while the board cells scale for larger grids.
+      final iconSize = min(canvasSize.x * 0.14, 50.0);
       // Position icons at 25% down from screen top (well above the board)
       final topBarY = canvasSize.y * 0.15;
-      final leftIconX = layout.boardX + 20;
-      final rightIconX = canvasSize.x - (layout.boardX + iconSize + 20);
+      final iconMargin = max(iconSize / 2 + 12, canvasSize.x * 0.14);
+      final leftIconX = iconMargin;
+      final rightIconX = canvasSize.x - iconMargin;
       final centerX = canvasSize.x / 2;
 
       humanIcon = SpriteComponent()
@@ -116,35 +208,29 @@ class TicTacToeVsAI extends Component {
         ..anchor = Anchor.center;
       add(aiIcon);
 
-      levelText = TextComponent(
-        text: 'Level $currentLevel',
-        position: Vector2(centerX, topBarY),
+      matchText = TextComponent(
+        text: 'ROUND 1 OF ${config.rounds}',
+        position: Vector2(centerX, topBarY + iconSize * 0.95),
         anchor: Anchor.center,
         textRenderer: TextPaint(
-          style: const TextStyle(
-            fontSize: 28,
-            color: Colors.yellow,
+          style: TextStyle(
+            fontSize: 17,
+            color: theme.gridColor,
             fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(blurRadius: 3, color: Colors.black, offset: Offset(0, 2)),
-            ],
           ),
         ),
       );
-      add(levelText);
+      add(matchText);
 
       scoreText = TextComponent(
-        text: "",
-        position: Vector2(centerX, topBarY + layout.cellHeight * 0.12),
+        text: 'YOU 0  -  COMPUTER 0',
+        position: Vector2(centerX, topBarY + iconSize * 1.55),
         anchor: Anchor.center,
         textRenderer: TextPaint(
-          style: const TextStyle(
-            fontSize: 32,
-            color: Colors.white,
+          style: TextStyle(
+            fontSize: 15,
+            color: theme.contrastColor,
             fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(blurRadius: 2, color: Colors.black, offset: Offset(0, 1)),
-            ],
           ),
         ),
       );
@@ -162,97 +248,89 @@ class TicTacToeVsAI extends Component {
       );
     }
 
-    // Apply symbol settings (loads correct sprites and ensures X starts)
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      humanIsX = prefs.getBool('human_is_x') ?? true;
-    } catch (_) {
-      humanIsX = true;
-    }
+    // Apply the character selected for this match.
+    humanIsX = config.humanPlayer == 'X';
+    currentPlayer = humanPlayer;
     await applySymbolSettings();
 
-    // Position themed button chips at top corners (above icons)
+    // Place the settings icon at the top-right corner.
     final topButtonY = canvasSize.y * 0.06;
     add(
-      ButtonComponent(
-        label: 'SETTINGS',
-        position: Vector2(canvasSize.x - 76, topButtonY),
-        size: Vector2(72, 34),
-        theme: theme,
+      SettingsIconButton(
+        position: Vector2(canvasSize.x - 32, topButtonY),
+        size: Vector2(36, 36),
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
-            final router = (flameGame as dynamic).router;
-            router?.pushNamed('settings');
+            (flameGame as dynamic).openSettings(returnRoute: 'vsai_active');
           }
         },
       ),
     );
 
     // Restart button at bottom center (repeats current level)
-    final restartSize = layout.cellHeight * 0.9;
-    add(
-      ButtonComponent(
-        label: 'RESTART',
-        position: Vector2(canvasSize.x / 2, canvasSize.y - restartSize * 0.6),
-        size: Vector2(120, 40),
-        theme: theme,
-        onPressed: () {
-          // Restart the current board/level without changing currentLevel
-          restartBoard();
-        },
-      ),
+    final backButton = ButtonComponent(
+      label: 'RESTART',
+      position: Vector2(canvasSize.x / 2, canvasSize.y - 46),
+      size: Vector2(120, 40),
+      theme: theme,
+      onPressed: () {
+        // Restart the current round without changing match settings.
+        restartBoard();
+      },
     );
+    _themeButtons.add(backButton);
+    add(backButton);
 
     // Back button
-    add(
-      ButtonComponent(
-        label: 'BACK',
-        position: Vector2(76, topButtonY),
-        size: Vector2(72, 34),
-        theme: theme,
-        onPressed: () async {
-          final flameGame = findGame();
-          if (flameGame == null) return;
+    final restartButton = ButtonComponent(
+      label: 'BACK',
+      position: Vector2(70, canvasSize.y - 46),
+      size: Vector2(72, 34),
+      theme: theme,
+      onPressed: () async {
+        final flameGame = findGame();
+        if (flameGame == null) return;
 
-          final dim = RectangleComponent(
-            size: flameGame.size,
-            paint: Paint()..color = Colors.black.withValues(alpha: 0.6),
-            priority: 1000000000000,
-          );
-          flameGame.add(dim);
+        final dim = InputBlockingDim(
+          size: flameGame.size,
+          color: Colors.black.withValues(alpha: 0.6),
+          priority: 1000000000000,
+        );
+        flameGame.add(dim);
 
-          late ConfirmationOverlay overlay;
-          overlay = ConfirmationOverlay(
-            theme: theme,
-            onYes: () {
-              // close overlay first
-              overlay.removeFromParent();
-              dim.removeFromParent();
+        late ConfirmationOverlay overlay;
+        overlay = ConfirmationOverlay(
+          theme: theme,
+          onYes: () {
+            // close overlay first
+            overlay.removeFromParent();
+            dim.removeFromParent();
 
-              // save score in background so UI stays snappy
-              if (!gameOver) {
-                saveScore("loss");
-              }
-              restartBoard();
+            // save score in background so UI stays snappy
+            if (!gameOver) {
+              saveScore("loss");
+            }
+            restartBoard();
 
-              final router = (flameGame as dynamic).router;
-              router?.pushNamed('menu');
-            },
-            onNo: () {
-              overlay.removeFromParent();
-              dim.removeFromParent();
-            },
-          );
-          overlay.priority = 10000000000000;
-          flameGame.add(overlay);
-        },
-      ),
+            final router = (flameGame as dynamic).router;
+            router?.pushNamed('menu');
+          },
+          onNo: () {
+            overlay.removeFromParent();
+            dim.removeFromParent();
+          },
+        );
+        overlay.priority = 10000000000000;
+        flameGame.add(overlay);
+      },
     );
+    _themeButtons.add(restartButton);
+    add(restartButton);
 
     // Board cells
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 3; col++) {
+    for (int row = 0; row < config.gridSize; row++) {
+      for (int col = 0; col < config.gridSize; col++) {
         add(
           TicTacToeCell(
             row: row,
@@ -304,13 +382,20 @@ class TicTacToeVsAI extends Component {
 
   void aiMove() {
     if (gameOver) return;
-    final move = ai.getMoveForLevel(board, currentLevel, aiPlayer, humanPlayer);
+    final move = ai.getMoveForLevel(
+      board,
+      aiLevel,
+      aiPlayer,
+      humanPlayer,
+      winLength: config.winLength,
+    );
     if (move[0] != -1) makeMove(move[0], move[1], aiPlayer);
   }
 
   void endRound() {
     debugPrint('>>> endRound() called, gameOver=$gameOver');
     gameOver = true;
+    _hideMatchHeader();
     Future.delayed(const Duration(seconds: 1), () async {
       debugPrint('>>> endRound delayed callback running');
       // Mark that the player has completed at least one match so other
@@ -331,6 +416,16 @@ class TicTacToeVsAI extends Component {
         result = "draw";
       }
 
+      if (result == 'win') {
+        humanWins++;
+      } else if (result == 'loss') {
+        aiWins++;
+      } else {
+        draws++;
+      }
+      final matchComplete = currentRound >= config.rounds;
+      _updateMatchHeader(matchComplete: matchComplete);
+
       await saveScore(result);
 
       // Track matches towards periodic progression sign-in prompts for
@@ -348,9 +443,9 @@ class TicTacToeVsAI extends Component {
       final flameGame = findGame();
       if (flameGame != null) {
         debugPrint('>>> flameGame found, size=${flameGame.size}');
-        final dim = RectangleComponent(
+        final dim = InputBlockingDim(
           size: flameGame.size,
-          paint: Paint()..color = Colors.black.withOpacity(0.6),
+          color: Colors.black.withValues(alpha: 0.6),
           priority: 1000000000000,
         );
         debugPrint('>>> Adding dim overlay to flameGame');
@@ -361,128 +456,19 @@ class TicTacToeVsAI extends Component {
           theme: theme,
           didWin: result == "win",
           didDraw: result == "draw",
-          showSignInPrompt: true,
+          showSignInPrompt: false,
+          singleHomeButton: matchComplete,
           onRestart: () {
             dim.removeFromParent();
             restartBoard();
+            _showMatchHeader();
           },
-          onNext: () async {
-            // Only allow progression to next level if player won
-            if (result != "win") {
-              // Player must win to proceed - just restart the same level
-              restartBoard();
-              return;
-            }
-            final prefs = await SharedPreferences.getInstance();
-            final bool completedFirst =
-                prefs.getBool('completed_first_match') ?? false;
-
-            // Only prompt sign-in for progression when the player has
-            // completed their first match and hasn't already been shown
-            // the progression sign-in prompt. Also skip the prompt if a
-            // Firebase user is already signed in.
-            final authUser = await (() async {
-              try {
-                return FirebaseAuth.instance.currentUser;
-              } catch (_) {
-                return null;
-              }
-            })();
-
-            final int nextMatches =
-                prefs.getInt('next_progression_matches_count') ?? 0;
-
-            // Prompt on Next when we've completed at least 1 match and
-            // every 5 matches thereafter (1, 5, 10, 15...) for non-signed-in users.
-            if (completedFirst &&
-                (nextMatches == 1 || nextMatches % 5 == 0) &&
-                authUser == null) {
-              // Close dim before showing auth gate
-              try {
-                dim.removeFromParent();
-              } catch (_) {}
-
-              // Show the sign-in/auth gate without awaiting it. The
-              // provided onSignedIn callback will continue the Next flow
-              // after sign-in completes.
-              try {
-                final gf = findGame();
-                if (gf != null) {
-                  showAuthGate(
-                    gf,
-                    onSignedIn: () async {
-                      currentLevel++;
-                      levelText.text = 'Level $currentLevel';
-                      final prefs2 = await SharedPreferences.getInstance();
-                      await prefs2.setInt('ai_level', currentLevel);
-
-                      // Rotate symbols and persist
-                      humanIsX = !humanIsX;
-                      await prefs2.setBool('human_is_x', humanIsX);
-                      await applySymbolSettings();
-
-                      restartBoard();
-
-                      // Schedule AI move if it should start
-                      try {
-                        if (currentPlayer == aiPlayer && !gameOver) {
-                          if (aiStartDelayMs <= 0) {
-                            Future.microtask(() {
-                              try {
-                                aiMove();
-                              } catch (_) {}
-                            });
-                          } else {
-                            Future.delayed(
-                              Duration(milliseconds: aiStartDelayMs),
-                              () {
-                                try {
-                                  aiMove();
-                                } catch (_) {}
-                              },
-                            );
-                          }
-                        }
-                      } catch (_) {}
-                    },
-                  );
-                }
-              } catch (e) {}
-
-              return;
-            }
-
-            // Normal progression for users who've already completed their first game
-            currentLevel++;
-            levelText.text = 'Level $currentLevel';
-            await prefs.setInt('ai_level', currentLevel);
-
-            // Rotate symbols: flip whether the human is X or O for next level
-            humanIsX = !humanIsX;
-            await prefs.setBool('human_is_x', humanIsX);
-            await applySymbolSettings();
-
+          onNext: () {
+            currentRound++;
             dim.removeFromParent();
             restartBoard();
-
-            // If AI should start, schedule its move after aiStartDelayMs (0 => immediate).
-            try {
-              if (currentPlayer == aiPlayer && !gameOver) {
-                if (aiStartDelayMs <= 0) {
-                  Future.microtask(() {
-                    try {
-                      aiMove();
-                    } catch (_) {}
-                  });
-                } else {
-                  Future.delayed(Duration(milliseconds: aiStartDelayMs), () {
-                    try {
-                      aiMove();
-                    } catch (_) {}
-                  });
-                }
-              }
-            } catch (_) {}
+            _updateMatchHeader();
+            _showMatchHeader();
           },
           onHome: () {
             debugPrint('>>> onHome pressed!');
@@ -555,8 +541,28 @@ class TicTacToeVsAI extends Component {
     });
   }
 
+  void _updateMatchHeader({bool matchComplete = false}) {
+    matchText.text = matchComplete
+        ? 'MATCH COMPLETE'
+        : 'ROUND $currentRound OF ${config.rounds}';
+    scoreText.text = 'YOU $humanWins  -  COMPUTER $aiWins';
+  }
+
+  void _hideMatchHeader() {
+    matchText.removeFromParent();
+    scoreText.removeFromParent();
+  }
+
+  void _showMatchHeader() {
+    if (!matchText.isMounted) add(matchText);
+    if (!scoreText.isMounted) add(scoreText);
+  }
+
   void restartBoard() {
-    board = List.generate(3, (_) => List.filled(3, ''));
+    board = List.generate(
+      config.gridSize,
+      (_) => List.filled(config.gridSize, ''),
+    );
     gameOver = false;
     // Human should always start. Set current player to the human player's symbol
     // so that symbols can rotate but the human always gets the first move.
@@ -574,56 +580,8 @@ class TicTacToeVsAI extends Component {
     confettiPieces.clear();
   }
 
-  bool checkForWinner(String player) {
-    final combos = [
-      [
-        [0, 0],
-        [0, 1],
-        [0, 2],
-      ],
-      [
-        [1, 0],
-        [1, 1],
-        [1, 2],
-      ],
-      [
-        [2, 0],
-        [2, 1],
-        [2, 2],
-      ],
-      [
-        [0, 0],
-        [1, 0],
-        [2, 0],
-      ],
-      [
-        [0, 1],
-        [1, 1],
-        [2, 1],
-      ],
-      [
-        [0, 2],
-        [1, 2],
-        [2, 2],
-      ],
-      [
-        [0, 0],
-        [1, 1],
-        [2, 2],
-      ],
-      [
-        [0, 2],
-        [1, 1],
-        [2, 0],
-      ],
-    ];
-    return combos.any(
-      (c) =>
-          board[c[0][0]][c[0][1]] == player &&
-          board[c[1][0]][c[1][1]] == player &&
-          board[c[2][0]][c[2][1]] == player,
-    );
-  }
+  bool checkForWinner(String player) =>
+      TicTacToeRules.checkGameStatus(board, config.gridSize) == player;
 
   bool checkForDraw() =>
       board.every((row) => row.every((cell) => cell.isNotEmpty));
@@ -631,7 +589,8 @@ class TicTacToeVsAI extends Component {
   void _startConfetti() {
     if (confettiRunning) return;
     confettiRunning = true;
-    final size = findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
+    final size =
+        findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
 
     void spawnPiece() {
       if (!confettiRunning) return;
@@ -737,8 +696,16 @@ class TicTacToeVsAI extends Component {
     aiPlayer = humanIsX ? 'O' : 'X';
     // Render themed symbol sprites for the header icons
     try {
-      humanIcon.sprite = await theme.symbolSprite(humanPlayer, humanIcon.size.x);
-      aiIcon.sprite = await theme.symbolSprite(aiPlayer, aiIcon.size.x);
+      humanIcon.sprite = await theme.symbolSprite(
+        humanPlayer,
+        humanIcon.size.x,
+        pixelRatio: 4,
+      );
+      aiIcon.sprite = await theme.symbolSprite(
+        aiPlayer,
+        aiIcon.size.x,
+        pixelRatio: 4,
+      );
     } catch (_) {}
     // Ensure the human always starts. This keeps symbol rotation (humanIsX)
     // but guarantees the human is the first to move each round.
@@ -752,7 +719,9 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
     required this.col,
     required super.position,
     required super.size,
-  });
+  }) {
+    priority = 1000;
+  }
 
   final int row;
   final int col;
@@ -764,6 +733,7 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
       final vs = parent as TicTacToeVsAI;
       if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
       vs.handleTap(row, col);
+      event.continuePropagation = false;
     }
   }
 
@@ -772,11 +742,19 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
     final markSize = Vector2.all(min(size.x, size.y) * 0.75);
     final board = parent as TicTacToeVsAI;
     markSprite = SpriteComponent(
-      sprite: await board.theme.symbolSprite(player, markSize.x),
+      sprite: await board.theme.symbolSprite(player, markSize.x, pixelRatio: 4),
       size: markSize,
       anchor: Anchor.center,
       position: size / 2,
     );
     add(markSprite!);
+  }
+
+  @override
+  bool containsLocalPoint(Vector2 point) {
+    return point.x >= 0 &&
+        point.x <= size.x &&
+        point.y >= 0 &&
+        point.y <= size.y;
   }
 }

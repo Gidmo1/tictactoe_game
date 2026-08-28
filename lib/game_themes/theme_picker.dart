@@ -23,7 +23,7 @@ class ThemePickerScreen extends Component {
 
     final background = RectangleComponent(
       size: canvas,
-      paint: Paint()..color = const Color(0xFF10141F),
+      paint: Paint()..color = current.boardBackground,
     );
     add(background);
 
@@ -33,9 +33,9 @@ class ThemePickerScreen extends Component {
         position: Vector2(canvas.x / 2, 60),
         anchor: Anchor.center,
         textRenderer: TextPaint(
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 26,
-            color: Colors.white,
+            color: current.contrastColor,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -47,10 +47,7 @@ class ThemePickerScreen extends Component {
       position: Vector2(canvas.x / 2, 92),
       anchor: Anchor.center,
       textRenderer: TextPaint(
-        style: const TextStyle(
-          fontSize: 16,
-          color: Colors.lightBlueAccent,
-        ),
+        style: TextStyle(fontSize: 16, color: current.gridColor),
       ),
     );
     add(_status!);
@@ -90,6 +87,8 @@ class ThemePickerScreen extends Component {
     current = ThemeStore.current;
     current = t;
     _status?.text = '${t.name} — applied';
+    final game = findGame();
+    (game as dynamic).router?.pushReplacementNamed('themes');
   }
 }
 
@@ -109,7 +108,7 @@ class _ThemeOption extends PositionComponent with TapCallbacks {
     await super.onLoad();
     final chip = RectangleComponent(
       size: size,
-      paint: Paint()..color = const Color(0xFF1E2430),
+      paint: Paint()..color = theme.boardBackground,
     );
     add(chip);
 
@@ -126,7 +125,7 @@ class _ThemeOption extends PositionComponent with TapCallbacks {
     final sym = size.y * 0.55;
     add(
       SpriteComponent(
-        sprite: await theme.symbolSprite('X', sym),
+        sprite: await theme.symbolSprite('X', sym, pixelRatio: 4),
         size: Vector2(sym, sym),
         position: Vector2(size.y * 0.9, size.y / 2),
         anchor: Anchor.center,
@@ -134,7 +133,7 @@ class _ThemeOption extends PositionComponent with TapCallbacks {
     );
     add(
       SpriteComponent(
-        sprite: await theme.symbolSprite('O', sym),
+        sprite: await theme.symbolSprite('O', sym, pixelRatio: 4),
         size: Vector2(sym, sym),
         position: Vector2(size.y * 1.7, size.y / 2),
         anchor: Anchor.center,
@@ -147,9 +146,9 @@ class _ThemeOption extends PositionComponent with TapCallbacks {
         position: Vector2(size.x / 2 + size.y * 0.4, size.y / 2),
         anchor: Anchor.center,
         textRenderer: TextPaint(
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 20,
-            color: Colors.white,
+            color: theme.contrastColor,
             fontWeight: FontWeight.bold,
           ),
         ),

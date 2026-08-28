@@ -1,4 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import '../service/supabase_compat.dart' as firebase_auth;
 
 class User {
   final String id;
@@ -31,16 +31,16 @@ class User {
     );
   }
 
-  factory User.fromFirebase(firebase_auth.User fbUser) {
+  factory User.fromSupabase(firebase_auth.User fbUser) {
     return User(
       id: fbUser.uid,
       userName: fbUser.displayName ?? 'Guest',
       providerId: fbUser.providerData.isNotEmpty
           ? fbUser.providerData[0].providerId
-          : 'firebase',
+          : 'supabase',
       providerName: fbUser.providerData.isNotEmpty
           ? fbUser.providerData[0].providerId
-          : 'firebase',
+          : 'supabase',
     );
   }
 }

@@ -29,7 +29,7 @@ class TicTacToeCell extends PositionComponent with TapCallbacks {
     final theme = (parent as TicTacToeBoard).theme;
     final pieceSize = Vector2.all(min(size.x, size.y) * 0.75);
     markSprite = SpriteComponent(
-      sprite: await theme.symbolSprite(symbol, pieceSize.x),
+      sprite: await theme.symbolSprite(symbol, pieceSize.x, pixelRatio: 4),
       size: pieceSize,
       anchor: Anchor.center,
       position: size / 2,
@@ -51,7 +51,37 @@ class TicTacToeBoard extends Component {
   bool gameOver = false;
 
   late final BoardLayout layout;
-  GameTheme theme = GameThemes.classic;
+  GameTheme theme = ThemeStore.current;
+  bool _themeDirty = false;
+
+  @override
+  void onMount() {
+    super.onMount();
+    if (_themeDirty || theme.id != ThemeStore.current.id) {
+      final game = findGame();
+      Future.microtask(() {
+        (game as dynamic).router?.pushReplacementNamed('tictactoe');
+      });
+    }
+  }
+
+  @override
+  void onRemove() {
+    super.onRemove();
+  }
+
+  bool get themeNeedsRefresh => _themeDirty;
+
+  void _onThemeChanged() {
+    if (theme.id == ThemeStore.current.id) return;
+    _themeDirty = true;
+    final game = findGame();
+    if (game != null && (game as dynamic).currentRoute == 'tictactoe') {
+      Future.microtask(() {
+        (game as dynamic).router?.pushReplacementNamed('tictactoe');
+      });
+    }
+  }
 
   bool confettiRunning = false;
   final Random random = Random();
@@ -64,10 +94,13 @@ class TicTacToeBoard extends Component {
     theme = ThemeStore.current;
 
     // Themed background (solid)
-    add(RectangleComponent(
-      size: canvasSize, position: Vector2.zero(),
-      paint: Paint()..color = theme.boardBackground,
-    ));
+    add(
+      RectangleComponent(
+        size: canvasSize,
+        position: Vector2.zero(),
+        paint: Paint()..color = theme.boardBackground,
+      ),
+    );
 
     // Themed board backdrop + grid lines
     for (final piece in themedBoardComponents(layout, theme)) {
@@ -93,7 +126,10 @@ class TicTacToeBoard extends Component {
         final profile = SpriteComponent()
           ..sprite = sprite
           ..size = Vector2(avatarSize, avatarSize)
-          ..position = Vector2(layout.boardX + 8, layout.boardY - avatarSize - 10)
+          ..position = Vector2(
+            layout.boardX + 8,
+            layout.boardY - avatarSize - 10,
+          )
           ..anchor = Anchor.topLeft;
         add(profile);
       }
@@ -137,16 +173,14 @@ class TicTacToeBoard extends Component {
     );
 
     add(
-      ButtonComponent(
-        label: 'SETTINGS',
-        position: Vector2(canvasSize.x - 76, topButtonY),
-        size: Vector2(84, 34),
-        theme: theme,
+      SettingsIconButton(
+        position: Vector2(canvasSize.x - 32, topButtonY),
+        size: Vector2(36, 36),
         onPressed: () {
           final flameGame = findGame();
           if (flameGame != null) {
             final router = (flameGame as dynamic).router;
-            router?.pushNamed('settings');
+            (flameGame as dynamic).openSettings(returnRoute: 'tictactoe');
           }
         },
       ),
@@ -286,7 +320,8 @@ class TicTacToeBoard extends Component {
     confettiRunning = true;
     print("Confetti has started");
 
-    final size = findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
+    final size =
+        findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
 
     void spawnConfettiPiece() {
       if (!confettiRunning) return;

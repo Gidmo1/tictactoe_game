@@ -1,8 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'supabase_compat.dart' as fb;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<fb.UserCredential?> signInWithGoogleImpl() async {
-  final provider = fb.GoogleAuthProvider();
-  return await fb.FirebaseAuth.instance.signInWithPopup(provider);
+  await Supabase.instance.client.auth.signInWithOAuth(OAuthProvider.google);
+  return fb.UserCredential(user: fb.FirebaseAuth.instance.currentUser);
 }
 
 Future<void> signOutImpl() async {

@@ -48,15 +48,27 @@ class GameTheme {
   Color _markColor(String symbol) => symbol == 'X' ? xColor : oColor;
 
   /// Renders the given symbol ('X' or 'O') as a square [Sprite] of [size] px.
-  Future<Sprite> symbolSprite(String symbol, double size) {
-    final key = '$symbol-${size.round()}';
-    return _symbolCache.putIfAbsent(key, () => _renderSymbol(symbol, size));
+  Future<Sprite> symbolSprite(
+    String symbol,
+    double size, {
+    double pixelRatio = 1,
+  }) {
+    final key = '$symbol-${size.round()}-${pixelRatio.toStringAsFixed(1)}';
+    return _symbolCache.putIfAbsent(
+      key,
+      () => _renderSymbol(symbol, size, pixelRatio),
+    );
   }
 
-  Future<Sprite> _renderSymbol(String symbol, double size) async {
-    final side = size.round();
+  Future<Sprite> _renderSymbol(
+    String symbol,
+    double size,
+    double pixelRatio,
+  ) async {
+    final side = (size * pixelRatio).round();
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
+    canvas.scale(pixelRatio);
 
     final pad = size * 0.14;
     final span = size - pad * 2;
@@ -131,11 +143,10 @@ class GameTheme {
     );
 
     final fill = ui.Paint()
-      ..shader = ui.Gradient.linear(
-        ui.Offset(0, 0),
-        ui.Offset(0, h),
-        [buttonBase, buttonHighlight],
-      );
+      ..shader = ui.Gradient.linear(ui.Offset(0, 0), ui.Offset(0, h), [
+        buttonBase,
+        buttonHighlight,
+      ]);
     canvas.drawRRect(rrect, fill);
 
     // Subtle border to keep the chip readable on bright boards.
@@ -148,16 +159,17 @@ class GameTheme {
     final image = await recorder.endRecording().toImage(w.round(), h.round());
     return Sprite(image);
   }
-/// Returns black or white depending on how dark/light [boardBackground] is.
+
+  /// Returns black or white depending on how dark/light [boardBackground] is.
   Color get contrastColor {
-    final l = boardBackground.r * 0.299 +
+    final l =
+        boardBackground.r * 0.299 +
         boardBackground.g * 0.587 +
         boardBackground.b * 0.114;
     return l > 0.5 ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
   }
-
-
 }
+
 /// The built-in, shipped skins. The Identity Shop later just appends here.
 class GameThemes {
   static final classic = GameTheme(

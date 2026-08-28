@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flame/components.dart';
+import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart' hide Route;
@@ -10,13 +11,12 @@ import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/components/button.dart';
 import 'package:tictactoe_game/game_themes/theme.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
-import 'firebase.dart';
+import 'package:tictactoe_game/game_themes/theme_picker.dart';
 import 'board.dart';
 import 'competition_screen.dart';
 import 'service/score_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'service/supabase_compat.dart';
 import 'service/invite_service.dart';
 import 'friend_invite_screen.dart';
 import 'invite_match_screen.dart';
@@ -28,6 +28,8 @@ import 'service/auth_service.dart';
 import 'tournament_match_screen.dart';
 
 import 'vs_ai_board.dart';
+import 'vs_computer_setup_screen.dart';
+import 'vs_computer_match_config.dart';
 
 class ObservingRouter extends RouterComponent {
   final void Function(String routeName)? onRouteChanged;
@@ -62,6 +64,7 @@ class TicTacToeGame extends FlameGame
   String loggedInUser = '';
   String? myPlayerSymbol;
   String currentRoute = 'menu';
+  VsComputerMatchConfig? vsComputerConfig;
   // Temporary callback set when showing the auth gate so the Flutter
   // overlay can notify game code when the user successfully signs in.
   void Function()? pendingAuthOnSignedIn;
@@ -70,7 +73,6 @@ class TicTacToeGame extends FlameGame
   bool _isMenuMusicPlaying = false;
   bool pendingTournamentJoinView = false;
   bool pendingTournamentAutoSearch = false;
-
   // it's gonna call these from components
   Future<void> playMenuMusic() async => _playMenuMusic();
   Future<void> stopMenuMusic() async => _stopMenuMusic();
@@ -254,6 +256,18 @@ class TicTacToeGame extends FlameGame
     } catch (_) {}
   }
 
+  void openSettings({required String returnRoute}) {
+    router.pushNamed('settings_$returnRoute');
+  }
+
+  void startVsComputer(VsComputerMatchConfig config) {
+    vsComputerConfig = config;
+    router.pushReplacement(
+      Route(() => TicTacToeVsAI(config: config)),
+      name: 'vsai_active',
+    );
+  }
+
   // Allow external callers to set invite input on the active FriendInviteComponent.
   void setInviteInput(String txt) {
     final comps = <FriendInviteComponent>[];
@@ -306,7 +320,7 @@ class TicTacToeGame extends FlameGame
   Future<void> onLoad() async {
     await super.onLoad();
     // Competition screen manages its own loading UI to avoid black screens.
-    await Firebaseinit().initFirebase();
+    // Supabase is initialized in main.dart before the game starts.
     // Ensure we have an authenticated user for Firestore rules that
     // require auth. Prefer existing sign-in; otherwise try anonymous.
     try {
@@ -399,11 +413,21 @@ class TicTacToeGame extends FlameGame
         'invite_join': Route(() => JoinMatchScreen()),
         'profile': Route(() => ProfileScreen()),
         'tictactoe': Route(() => TicTacToeBoard()),
-        'vsai': Route(() => TicTacToeVsAI()),
-        'settings': Route(() => SettingsScreen()),
+        'vsai_setup': Route(() => VsComputerSetupScreen()),
+        'vsai': Route(() => TicTacToeVsAI(config: vsComputerConfig)),
+        'settings': Route(() => SettingsScreen(returnRoute: 'menu')),
+        'settings_menu': Route(() => SettingsScreen(returnRoute: 'menu')),
+        'settings_tictactoe': Route(
+          () => SettingsScreen(returnRoute: 'tictactoe'),
+        ),
+        'settings_vsai': Route(() => SettingsScreen(returnRoute: 'vsai')),
+        'settings_vsai_active': Route(
+          () => SettingsScreen(returnRoute: 'vsai_active'),
+        ),
         'competition': Route(() => CompetitionScreen()),
         'privacy': Route(() => PrivacyOptionsScreen()),
         'tournament': Route(() => TournamentMatchScreen()),
+        'themes': Route(() => ThemePickerScreen()),
       },
       onRouteChanged: (name) => handleRouteChange(name),
     );
@@ -451,89 +475,109 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? scoreListener;
   GameTheme get theme => ThemeStore.current;
 
+  // Theme-reactive components that need rebuilding on theme change
+  RectangleComponent? _bgRect;
+  final List<Component> _themedChildren = [];
+  int _themeBuildGeneration = 0;
+  String? _builtThemeId;
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    _buildThemedComponents(++_themeBuildGeneration);
+  }
 
-    add(
-      RectangleComponent(
-        size: game.size,
-        position: Vector2.zero(),
-        priority: 0,
-        paint: Paint()..color = theme.boardBackground,
-      ),
+  @override
+  void onMount() {
+    super.onMount();
+    ThemeStore.addListener(_onThemeChanged);
+    if (_builtThemeId != null && _builtThemeId != theme.id) {
+      _onThemeChanged();
+    }
+  }
+
+  @override
+  void onRemove() {
+    ThemeStore.removeListener(_onThemeChanged);
+    super.onRemove();
+  }
+
+  void _onThemeChanged() {
+    final generation = ++_themeBuildGeneration;
+    for (final child in _themedChildren) {
+      child.removeFromParent();
+    }
+    _themedChildren.clear();
+    _bgRect?.removeFromParent();
+    _bgRect = null;
+    _buildThemedComponents(generation);
+  }
+
+  Future<void> _buildThemedComponents([int? generation]) async {
+    final t = theme;
+    _builtThemeId = t.id;
+
+    _bgRect = RectangleComponent(
+      size: game.size,
+      position: Vector2.zero(),
+      priority: 0,
+      paint: Paint()..color = t.boardBackground,
     );
+    add(_bgRect!);
 
     // Title
-    add(
-      TextComponent(
-        text: '& ',
-        position: Vector2(200, 150),
-        anchor: Anchor.center,
-        textRenderer: TextPaint(
-          style: TextStyle(
-            fontSize: 40,
-            color: theme.contrastColor,
-            fontWeight: FontWeight.bold,
-          ),
+    final title = TextComponent(
+      text: '& ',
+      position: Vector2(200, 150),
+      anchor: Anchor.center,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          fontSize: 40,
+          color: t.contrastColor,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
+    add(title);
+    _themedChildren.add(title);
 
     // X and O sprites
-    add(
-      SpriteComponent(
-        sprite: await theme.symbolSprite('X', 50),
-        size: Vector2(50, 50),
-        position: Vector2(150, 150),
-        anchor: Anchor.center,
-      ),
+    final xSprite = SpriteComponent(
+      sprite: await t.symbolSprite('X', 50, pixelRatio: 4),
+      size: Vector2(50, 50),
+      position: Vector2(150, 150),
+      anchor: Anchor.center,
     );
+    if (generation != null && generation != _themeBuildGeneration) return;
+    add(xSprite);
+    _themedChildren.add(xSprite);
 
-    add(
-      SpriteComponent(
-        sprite: await theme.symbolSprite('O', 50),
-        size: Vector2(50, 50),
-        position: Vector2(240, 150),
-        anchor: Anchor.center,
-      ),
+    final oSprite = SpriteComponent(
+      sprite: await t.symbolSprite('O', 50, pixelRatio: 4),
+      size: Vector2(50, 50),
+      position: Vector2(240, 150),
+      anchor: Anchor.center,
     );
+    if (generation != null && generation != _themeBuildGeneration) return;
+    add(oSprite);
+    _themedChildren.add(oSprite);
 
-    // Profile avatar
-    /*final profileSprite = await game.loadSprite('profile.png');
-    add(
-      ProfileAvatar(
-        sprite: profileSprite,
-        size: Vector2(60, 60),
-        position: Vector2(50, 60),
-        onTap: () => game.router.pushNamed('profile'),
-      ),
-    );*/
-
-    add(
-      ButtonComponent(
-        label: '',
-        position: Vector2(340, 60),
-        size: Vector2(30, 30),
-        theme: theme,
-        onPressed: () => game.router.pushNamed('settings'),
-      ),
+    // Settings gear icon (using sprite) - NOT themed, keep as-is
+    final settingsBtn = SettingsIconButton(
+      position: Vector2(340, 60),
+      size: Vector2(36, 36),
+      onPressed: () => game.openSettings(returnRoute: 'menu'),
     );
-
-    // Test button removed - avatar-claim overlay is shown automatically
-    // after the player's first completed match via the Home button handler.
+    add(settingsBtn);
+    _themedChildren.add(settingsBtn);
 
     // Profile avatar: prefer the chosen avatar (if any) and make it tappable
     try {
       final prefs = await SharedPreferences.getInstance();
       final chosen = prefs.getString('chosen_avatar') ?? '';
-      // If the player hasn't chosen an avatar yet, don't show any avatar on
-      // the home screen. The avatar will be offered after their first match.
       final showAvatar = chosen.isNotEmpty;
       Sprite? profileSprite;
       if (showAvatar && chosen.isNotEmpty) {
-        // Try a few common asset keys so sprite loading is robust across
-        // different `pubspec.yaml` asset declarations.
         final candidates = [
           'assets/images/$chosen.png',
           'images/$chosen.png',
@@ -547,6 +591,7 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
         }
       }
       if (profileSprite != null) {
+        if (generation != null && generation != _themeBuildGeneration) return;
         final pa = ProfileAvatar(
           sprite: profileSprite,
           size: Vector2(60, 60),
@@ -560,69 +605,56 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
           pa.priority = 1000000000000;
         } catch (_) {}
         add(pa);
+        _themedChildren.add(pa);
       }
     } catch (_) {}
 
-    // Play buttons
-    /*final playSprite = await game.loadSprite('play.png');
-    add(
-      _PressdownButton(
-        sprite: playSprite,
-        position: game.size / 2 + Vector2(0, -70),
-        onPressed: () => game.router.pushNamed('tictactoe'),
-      ),
-    );*/
-
-    add(
-      ButtonComponent(
-        label: 'VS FRIEND',
-        position: game.size / 2,
-        size: Vector2(220, 50),
-        theme: theme,
-        onPressed: () async {
-          final g = game;
-          try {
-            g.overlays.remove('code_input');
-            g.overlays.remove('message');
-          } catch (_) {}
-          g.router.pushNamed('invite_options');
-        },
-      ),
+    // Play buttons (themed)
+    final btnFriend = ButtonComponent(
+      label: 'VS FRIEND',
+      position: game.size / 2,
+      size: Vector2(220, 50),
+      theme: t,
+      onPressed: () async {
+        final g = game;
+        try {
+          g.overlays.remove('code_input');
+          g.overlays.remove('message');
+        } catch (_) {}
+        g.router.pushNamed('invite_options');
+      },
     );
+    add(btnFriend);
+    _themedChildren.add(btnFriend);
 
-    add(
-      ButtonComponent(
-        label: 'VS COMPUTER',
-        position: game.size / 2 + Vector2(0, 60),
-        size: Vector2(220, 50),
-        theme: theme,
-        onPressed: () async {
-          final g = game;
-          try {
-            g.overlays.remove('code_input');
-            g.overlays.remove('message');
-          } catch (_) {}
-          g.router.pushNamed('vsai');
-        },
-      ),
+    final btnAI = ButtonComponent(
+      label: 'VS COMPUTER',
+      position: game.size / 2 + Vector2(0, 60),
+      size: Vector2(220, 50),
+      theme: t,
+      onPressed: () async {
+        final g = game;
+        try {
+          g.overlays.remove('code_input');
+          g.overlays.remove('message');
+        } catch (_) {}
+        g.router.pushNamed('vsai_setup');
+      },
     );
+    add(btnAI);
+    _themedChildren.add(btnAI);
 
-    add(
-      ButtonComponent(
-        label: 'COMPETITION',
-        position: game.size / 2 + Vector2(0, 120),
-        size: Vector2(220, 50),
-        theme: theme,
-        onPressed: () async {
-          game.router.pushNamed('competition');
-        },
-      ),
+    final btnComp = ButtonComponent(
+      label: 'COMPETITION',
+      position: game.size / 2 + Vector2(0, 120),
+      size: Vector2(220, 50),
+      theme: t,
+      onPressed: () async {
+        game.router.pushNamed('competition');
+      },
     );
-
-    // Avatar claim overlay is now shown after the first completed game
-    // (handled by `EndMatchOverlay`). Removing the previous behavior that
-    // added the avatar overlay on first visit to avoid showing it on the
-    // home/menu screen before the player has played any games.
+    add(btnComp);
+    _themedChildren.add(btnComp);
   }
 }
 

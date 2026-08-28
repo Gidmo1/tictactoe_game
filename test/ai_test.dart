@@ -29,5 +29,25 @@ void main() {
       final move = ai.getMoveForLevel(board, 50, 'O', 'X');
       expect(move, equals([1, 1]));
     });
+
+    test('detects four in a row on a 4x4 board', () {
+      final board = List.generate(4, (_) => List.filled(4, ''));
+      for (var col = 0; col < 3; col++) {
+        board[1][col] = 'O';
+      }
+
+      final move = ai.getMoveForLevel(board, 50, 'O', 'X', winLength: 4);
+      expect(move, equals([1, 3]));
+    });
+
+    test('blocks five in a row on a 10x10 board', () {
+      final board = List.generate(10, (_) => List.filled(10, ''));
+      for (var col = 0; col < 4; col++) {
+        board[6][col] = 'X';
+      }
+
+      final move = ai.getMoveForLevel(board, 50, 'O', 'X', winLength: 5);
+      expect(move, equals([6, 4]));
+    });
   });
 }

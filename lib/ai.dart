@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'tic_tac_toe_rules.dart';
+
 class TicTacToeAI {
   final Random _random = Random();
 
@@ -7,141 +9,71 @@ class TicTacToeAI {
     List<List<String>> board,
     int level,
     String aiPlayer,
-    String humanPlayer,
-  ) {
+    String humanPlayer, {
+    int? winLength,
+  }) {
+    final target = winLength ?? TicTacToeRules.winLengthFor(board.length);
     final empties = _emptyCells(board);
     if (empties.isEmpty) return [-1, -1];
-
-    // Mistake chance by level
-    final mistakeChance = _getMistakeChance(level);
-
-    // Possibly make a weaker move
-    if (_random.nextDouble() < mistakeChance) {
-      return _randomMove(board); // make a weaker move
+    if (_random.nextDouble() < _getMistakeChance(level)) {
+      return _randomMove(empties);
     }
-
-    // Try to win or block, else random
-    final winMove = _findWinningMove(board, aiPlayer);
+    final winMove = _findWinningMove(board, aiPlayer, target);
     if (winMove != null) return winMove;
-
-    final blockMove = _findWinningMove(board, humanPlayer);
+    final blockMove = _findWinningMove(board, humanPlayer, target);
     if (blockMove != null) return blockMove;
-
-    // Try center
-    if (board[1][1] == '') return [1, 1];
-
-    // Try corners
-    final corners = [
-      [0, 0],
-      [0, 2],
-      [2, 0],
-      [2, 2],
-    ];
-    corners.shuffle(_random);
-    for (var c in corners) {
-      if (board[c[0]][c[1]] == '') return c;
-    }
-
-    // Otherwise random
-    return _randomMove(board);
+    final center = board.length ~/ 2;
+    if (board[center][center].isEmpty) return [center, center];
+    empties.sort(
+      (a, b) =>
+          _priority(b, board.length).compareTo(_priority(a, board.length)),
+    );
+    return empties.first;
   }
-
-  // Helpers
 
   List<List<int>> _emptyCells(List<List<String>> board) {
-    final empties = <List<int>>[];
-    for (int r = 0; r < 3; r++) {
-      for (int c = 0; c < 3; c++) {
-        if (board[r][c] == '') empties.add([r, c]);
+    final result = <List<int>>[];
+    for (var row = 0; row < board.length; row++) {
+      for (var col = 0; col < board.length; col++) {
+        if (board[row][col].isEmpty) result.add([row, col]);
       }
     }
-    return empties;
+    return result;
   }
 
-  List<int> _randomMove(List<List<String>> board) {
-    final empties = _emptyCells(board);
-    if (empties.isEmpty) return [-1, -1];
-    return empties[_random.nextInt(empties.length)];
-  }
+  List<int> _randomMove(List<List<int>> empties) =>
+      empties[_random.nextInt(empties.length)];
 
-  List<int>? _findWinningMove(List<List<String>> board, String player) {
-    for (int r = 0; r < 3; r++) {
-      for (int c = 0; c < 3; c++) {
-        if (board[r][c] == '') {
-          board[r][c] = player;
-          final isWin = _isWinner(board, player);
-          board[r][c] = '';
-          if (isWin) return [r, c];
-        }
-      }
+  List<int>? _findWinningMove(
+    List<List<String>> board,
+    String player,
+    int winLength,
+  ) {
+    for (final move in _emptyCells(board)) {
+      board[move[0]][move[1]] = player;
+      final win = TicTacToeRules.checkGameStatus(board, board.length) == player;
+      board[move[0]][move[1]] = '';
+      if (win) return move;
     }
     return null;
   }
 
-  bool _isWinner(List<List<String>> board, String player) {
-    const combos = [
-      // rows
-      [
-        [0, 0],
-        [0, 1],
-        [0, 2],
-      ],
-      [
-        [1, 0],
-        [1, 1],
-        [1, 2],
-      ],
-      [
-        [2, 0],
-        [2, 1],
-        [2, 2],
-      ],
-      // columns
-      [
-        [0, 0],
-        [1, 0],
-        [2, 0],
-      ],
-      [
-        [0, 1],
-        [1, 1],
-        [2, 1],
-      ],
-      [
-        [0, 2],
-        [1, 2],
-        [2, 2],
-      ],
-      // diagonals
-      [
-        [0, 0],
-        [1, 1],
-        [2, 2],
-      ],
-      [
-        [0, 2],
-        [1, 1],
-        [2, 0],
-      ],
-    ];
+  static bool hasWinner(
+    List<List<String>> board,
+    String player,
+    int winLength,
+  ) => TicTacToeRules.checkGameStatus(board, board.length) == player;
 
-    for (var combo in combos) {
-      if (board[combo[0][0]][combo[0][1]] == player &&
-          board[combo[1][0]][combo[1][1]] == player &&
-          board[combo[2][0]][combo[2][1]] == player) {
-        return true;
-      }
-    }
-    return false;
+  int _priority(List<int> move, int size) {
+    final center = (size - 1) / 2;
+    return (size * 10 -
+            ((move[0] - center).abs() + (move[1] - center).abs()) * 10)
+        .round();
   }
 
   double _getMistakeChance(int level) {
-    // Higher level means fewer mistakes
-    if (level <= 1) return 0.9; // will be simple
+    if (level <= 1) return 0.9;
     if (level <= 10) return 0.6;
-    if (level <= 20) return 0.4;
-    if (level <= 30) return 0.2;
-    if (level < 50) return 0.1;
-    return 0.0; // level 50+ = no mistakes
+    return 0.0;
   }
 }

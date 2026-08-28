@@ -66,17 +66,6 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Firebase configuration metadata for auth -->
-        <meta-data
-            android:name="com.google.firebase.ml.vision.DEPENDENCIES"
-            android:value="barcode" />
-
-        <!-- Firebase auth activity for provider sign-in -->
-        <activity
-            android:name="com.firebase.ui.auth.FirebaseUiActivity"
-            android:exported="true"
-            android:theme="@android:style/Theme.Translucent" />
-
         <!-- Google Sign-In activity -->
         <activity
             android:name="com.google.android.gms.auth.api.signin.internal.SignInHubActivity"

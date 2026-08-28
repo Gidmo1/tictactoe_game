@@ -1,31 +1,16 @@
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase_compat.dart' as fb;
 
-/// Mobile implementation using Firebase's signInWithProvider.
-/// This uses the Firebase authentication flow which delegates to the native platform.
 Future<fb.UserCredential?> signInWithGoogleImpl() async {
   try {
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    debugPrint('auth_impl_mobile: attempting signInWithProvider');
-
-    final provider = fb.GoogleAuthProvider();
-    final result = await fb.FirebaseAuth.instance.signInWithProvider(provider);
-    debugPrint('auth_impl_mobile: sign-in success, uid=${result.user?.uid}');
-    return result;
-  } on fb.FirebaseAuthException catch (e) {
-    debugPrint(
-      'auth_impl_mobile: Firebase error code=${e.code} message=${e.message}',
+    await Supabase.instance.client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: 'io.supabase.tictactoe://login-callback',
     );
-
-    // Log detailed error info for debugging
-    debugPrint('auth_impl_mobile: Full error: $e');
-
-    debugPrintStack(stackTrace: StackTrace.current);
-    return null;
+    return fb.UserCredential(user: fb.FirebaseAuth.instance.currentUser);
   } catch (e) {
-    debugPrint('auth_impl_mobile: error: $e');
-    debugPrintStack(stackTrace: StackTrace.current);
+    debugPrint('Supabase Google sign-in error: $e');
     return null;
   }
 }

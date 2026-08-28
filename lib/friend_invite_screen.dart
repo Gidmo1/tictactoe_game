@@ -8,10 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'tictactoe.dart';
 import 'dart:async';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'service/supabase_compat.dart';
 import 'service/guest_service.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'service/supabase_compat.dart' as fb;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FriendInviteComponent extends PositionComponent

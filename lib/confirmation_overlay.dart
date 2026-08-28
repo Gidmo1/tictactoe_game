@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/components/button.dart';
+import 'package:tictactoe_game/components/ornate_overlay_panel.dart';
 import 'package:tictactoe_game/game_themes/theme.dart';
 
 class ConfirmationOverlay extends PositionComponent {
@@ -13,11 +14,11 @@ class ConfirmationOverlay extends PositionComponent {
     required this.onNo,
     required this.theme,
   }) : super(
-          size: Vector2(320, 180),
-          anchor: Anchor.center,
-          priority: 100,
-          position: Vector2(160, 100),
-        );
+         size: Vector2(320, 180),
+         anchor: Anchor.center,
+         priority: 100,
+         position: Vector2(160, 100),
+       );
 
   @override
   Future<void> onLoad() async {
@@ -26,18 +27,12 @@ class ConfirmationOverlay extends PositionComponent {
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
     }
 
-    add(
-      RectangleComponent(
-        size: size,
-        paint: Paint()..color = theme.boardBackground,
-        anchor: Anchor.center,
-        position: size / 2,
-      ),
-    );
+    add(OrnateOverlayPanel(size: size, theme: theme));
 
     add(
       TextComponent(
-        text: "Are you sure that you want to leave this mode? \n               You will lose the current game.",
+        text:
+            "Are you sure that you want to leave this mode? \n               You will lose the current game.",
         anchor: Anchor.topCenter,
         position: Vector2(size.x / 2, 30),
         textRenderer: TextPaint(

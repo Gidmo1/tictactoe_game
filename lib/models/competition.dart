@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../service/supabase_compat.dart';
 
 class CompetitionEntry {
   final String userId;

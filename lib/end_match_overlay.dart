@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/components/button.dart';
+import 'package:tictactoe_game/components/ornate_overlay_panel.dart';
 import 'package:tictactoe_game/game_themes/theme.dart';
 
 class EndMatchOverlay extends PositionComponent {
@@ -34,14 +35,7 @@ class EndMatchOverlay extends PositionComponent {
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
     }
 
-    add(
-      RectangleComponent(
-        size: size,
-        paint: Paint()..color = theme.boardBackground,
-        anchor: Anchor.center,
-        position: size / 2,
-      ),
-    );
+    add(OrnateOverlayPanel(size: size, theme: theme));
 
     final defaultBig = didDraw
         ? 'You did your best'

@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'supabase_compat.dart' as fb;
+import 'supabase_compat.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../models/score.dart';
 import 'local_db.dart';

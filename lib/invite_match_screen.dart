@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'service/supabase_compat.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/effects.dart';
@@ -13,7 +12,7 @@ import 'components/auth_gate_component.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/board_layout.dart';
-import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'service/supabase_compat.dart' as fb;
 import 'service/competition_service.dart';
 import 'service/score_service.dart';
 import 'models/score.dart';

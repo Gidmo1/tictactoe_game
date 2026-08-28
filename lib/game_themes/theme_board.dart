@@ -15,13 +15,13 @@ List<Component> themedBoardComponents(BoardLayout layout, GameTheme theme) {
   final pieces = <Component>[];
   final t = max(layout.cellWidth, layout.cellHeight) * 0.01;
 
-  // Opaque board panel sized to the 3x3 region (slightly oversized so it fully
+  // Opaque board panel sized to the configured region (slightly oversized so it fully
   // hides the art grid beneath).
   pieces.add(
     RectangleComponent(
       size: Vector2(
-        layout.cellWidth * 3 + t,
-        layout.cellHeight * 3 + t,
+        layout.cellWidth * layout.gridSize + t,
+        layout.cellHeight * layout.gridSize + t,
       ),
       position: Vector2(layout.boardX - t / 2, layout.boardY - t / 2),
       paint: Paint()..color = theme.boardBackground,
@@ -29,11 +29,11 @@ List<Component> themedBoardComponents(BoardLayout layout, GameTheme theme) {
   );
 
   // Grid lines at the exact cell boundaries.
-  for (int i = 0; i <= 3; i++) {
+  for (int i = 0; i <= layout.gridSize; i++) {
     final x = layout.boardX + i * layout.cellWidth;
     pieces.add(
       RectangleComponent(
-        size: Vector2(t, layout.cellHeight * 3),
+        size: Vector2(t, layout.cellHeight * layout.gridSize),
         position: Vector2(x, layout.boardY),
         paint: Paint()..color = theme.gridColor,
       ),
@@ -41,7 +41,7 @@ List<Component> themedBoardComponents(BoardLayout layout, GameTheme theme) {
     final y = layout.boardY + i * layout.cellHeight;
     pieces.add(
       RectangleComponent(
-        size: Vector2(layout.cellWidth * 3, t),
+        size: Vector2(layout.cellWidth * layout.gridSize, t),
         position: Vector2(layout.boardX, y),
         paint: Paint()..color = theme.gridColor,
       ),

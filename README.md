@@ -11,19 +11,19 @@ Real-time online multiplayer, smart AI opponents, leaderboards, trophies, and st
 
 ![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
 ![Flame](https://img.shields.io/badge/Flame-FF9800?style=for-the-badge)
-![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
+![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=black)
 ![Platforms](https://img.shields.io/badge/Platforms-Android%20%7C%20iOS%20%7C%20Web%20%7C%20Desktop-blue?style=for-the-badge)
 
 ## ✨ Features
 
 ### 🎯 Game Modes
-- **Online Multiplayer (vs Friend)** — Shareable invite code/link, real-time moves synced via Firebase Realtime Database
+- **Online Multiplayer (vs Friend)** — Shareable invite code/link, real-time moves synced via Supabase Realtime
 - **Vs Computer** — Play against AI with multiple difficulty levels
 - **Competition / Tournaments** — Compete for rankings
 - **Quick Guest Play** — Jump in instantly without signing in
 
 ### 🏆 Social & Progression
-- Google Sign-In + Firebase Authentication
+- Google Sign-In + Supabase Authentication
 - Custom player profiles & avatars (annah, david, piper, andrew, etc.)
 - Global & friends Leaderboards
 - Trophy system — Bronze I, Silver II, Gold III (with locked versions)
@@ -44,7 +44,7 @@ Real-time online multiplayer, smart AI opponents, leaderboards, trophies, and st
 ## 🛠 Tech Stack
 
 - **Frontend**: Flutter + Flame 1.12 (game engine)
-- **Backend**: Firebase (Auth, Firestore, Realtime Database, Cloud Functions)
+- **Backend**: Supabase (Auth, Postgres, Realtime, Edge Functions)
 - **Audio**: flame_audio + audioplayers
 - **Utilities**: google_sign_in, share_plus, app_links, connectivity_plus, shared_preferences, uuid, etc.
 
@@ -52,7 +52,7 @@ Real-time online multiplayer, smart AI opponents, leaderboards, trophies, and st
 
 ### Prerequisites
 - Flutter SDK (`>=3.8.1`)
-- Firebase project (with Authentication, Firestore, Realtime Database enabled)
+- Supabase project with Authentication and the SQL schema from `supabase_phase1.sql`
 
 ### Installation
 
@@ -63,15 +63,12 @@ flutter pub get
 flutter run
 ```
 
-### Firebase Setup (Important!)
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Google Sign-In** in Authentication
-3. Create Firestore Database and Realtime Database
-4. Download your config files:
-   - `google-services.json` → `android/app/`
-   - `GoogleService-Info.plist` → `ios/Runner/`
-5. Run `flutterfire configure` (or manually update `lib/firebase_options.dart`)
-6. Review `firestore.rules` before going live
+### Supabase Setup (Important!)
+1. Create a Supabase project.
+2. Paste `supabase_phase1.sql` into the Supabase SQL Editor and run it.
+3. Enable the desired authentication providers in Supabase Authentication.
+4. Copy `.env.example` to `.env` and add your project URL and anon key.
+5. Run `./run_with_env.ps1` from PowerShell. `.env` is ignored by Git.
 
 ## 🎮 How to Play
 1. Launch the app
