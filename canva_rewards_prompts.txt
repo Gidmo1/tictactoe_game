@@ -1,0 +1,80 @@
+TICTACTOE REWARDS / ACHIEVEMENT PROMPTS
+=======================================
+
+IMPORTANT:
+- Create each item one at a time.
+- Keep all items in the same premium game UI style.
+- Use different silhouettes for trophies, medals, and awards.
+- Keep transparent background and mobile-app friendly design.
+- Make them suitable for a player profile display.
+
+
+PROMPT 1 — CHAMPION TROPHY
+---------------------------
+Create a premium champion trophy for a Tic-Tac-Toe multiplayer game. Make it a classic trophy shape with a cup, pedestal, and polished metallic finish. Use a gold and dark premium palette, elegant game UI styling, transparent background, clean vector art, subtle shadows, and readable text. Include a bold title like "Champion" and a small icon or star motif. Design it for a player profile achievement badge, mobile game UI, and collectible reward display. Keep the style consistent with other trophies in the same set.
+
+PROMPT 2 — FINALIST TROPHY
+---------------------------
+Create a premium finalist trophy for a Tic-Tac-Toe tournament. Use a slightly smaller trophy silhouette than champion, still premium and elegant, with silver metallic styling and a clean pedestal base. Transparent background, polished game UI look, subtle highlights, and readable text such as "Finalist". Design it as a profile achievement reward, collectible item, and tournament placement badge. Keep it aligned with the same premium visual family as other trophies.
+
+PROMPT 3 — TOURNAMENT HOST TROPHY
+---------------------------------
+Create a premium tournament host trophy for a multiplayer game. Design it as a classic trophy or plaque with a small crown, star, or hosting icon integrated into the form. Use a blue or royal-toned premium palette, elegant metallic finish, transparent background, desktop/mobile app polish, and clear text like "Host" or "Tournament Host". Make it feel prestigious but still suitable for a profile display. Keep the design consistent with other trophies in the same collection.
+
+PROMPT 4 — FIRST TOURNAMENT MEDAL
+----------------------------------
+Create a premium first tournament medal for a Tic-Tac-Toe app. Use a round medal silhouette with a ribbon and bold center emblem. Use a green or bronze palette with a polished game UI look, transparent background, modern vector design, and subtle shine. Add text like "First Tournament" or "Rookie" in a readable style. Make it look like a collectible medal for a player profile and achievement screen.
+
+PROMPT 5 — WIN STREAK MEDAL
+---------------------------
+Create a premium win streak medal for a competitive multiplayer Tic-Tac-Toe game. Design a round medal with a ribbon and bold center icon representing multiple wins in a row. Use a gold, purple, or red accent palette, transparent background, polished vector style, subtle highlights, and readable text such as "Win Streak". Make it look like a strong progression reward and display well as a profile badge or achievement medal.
+
+PROMPT 6 — PARTICIPATION MEDAL
+------------------------------
+Create a premium participation medal for a Tic-Tac-Toe tournament app. Use a round medal silhouette with a ribbon and centered symbol like a checkmark, star, or player token. Use a blue, teal, or silver palette, transparent background, modern game UI styling, clear readable text like "Participant" or "Entry". Keep it simple but polished and collectible, suitable for profile display and event participation rewards.
+
+PROMPT 7 — TOP PERFORMER MEDAL
+-------------------------------
+Create a premium top performer medal for a competitive tournament app. Use a round medal shape with a prominent center emblem and ribbon. Use a gold or red premium palette, polished metallic finish, clean vector design, transparent background, and text such as "Top Performer" or "Elite". Make it feel like a high-level achievement reward for competitive players and display beautifully on a profile screen.
+
+PROMPT 8 — COMMUNITY LEGEND AWARD
+----------------------------------
+Create a unique custom award for a Tic-Tac-Toe community achievement called "Community Legend." Use a non-standard award shape that is not a standard medal or trophy. It could be an abstract badge, ceremonial ribbon, starburst, crystal plaque, or unique prestige token. Use a purple, neon, or prestige palette, transparent background, premium gamer aesthetic, and bold stylized text. Make it feel rare and special, like a custom honor awarded for community contribution or recognition. Keep it collectible and profile-ready.
+
+PROMPT 9 — BRACKET BREAKER AWARD
+--------------------------------
+Create a custom award called "Bracket Breaker" for a tournament game. Use a unique custom silhouette that is not a trophy or medal, such as a stylized ribbon, badge, broken bracket emblem, or modern ceremonial plaque. Use a bold red, orange, or dark premium palette with readable text and polished game UI styling. Transparent background, high contrast, collectible look, and strong display value on a player profile. Make it feel like a special event reward for tournament upset wins or bracket progression.
+
+PROMPT 10 — MOST IMPROVED AWARD
+--------------------------------
+Create a custom award for "Most Improved" in a Tic-Tac-Toe tournament app. Design a unique non-standard award shape that feels like a rising star, upward arrow, crest, or improvement badge. Use a green, teal, or silver palette with polished design details, transparent background, modern vector style, and readable text. Make it feel rewarding and aspirational, suitable for profile achievement tracking and seasonal competition displays.
+
+PROMPT 11 — MVP AWARD
+---------------------
+Create a premium MVP award for a multiplayer Tic-Tac-Toe tournament. Use a custom award silhouette that is distinct from trophies and medals, such as a glowing starburst, special plaque, or ceremonial badge. Use a gold, blue, or premium neon palette, polished and high-contrast game UI styling, readable text like "MVP", and transparent background. Make it feel like the top individual honor in a tournament and suitable for a competitive player profile.
+
+PROMPT 12 — EVENT HERO AWARD
+----------------------------
+Create a premium custom award called "Event Hero" for a special game event or tournament. Use an original award form that is not a standard trophy or medal, such as a ceremonial token, ribbon badge, shield emblem, or unique crystal plaque. Use a premium mix of dark blue, gold, and cyan accents, strong contrast, modern gaming aesthetic, transparent background, and readable text. Make it feel like a special recognition award for standout players and display well on a profile or leaderboard page.
+
+PROMPT 13 — UNITY SHEET / COLLECTION BOARD
+------------------------------------------
+Create a premium reward collection sheet for a Tic-Tac-Toe multiplayer game. Arrange multiple reward items in a clean grid layout on a transparent background, including trophies, medals, and custom awards. Keep the same visual identity across all rewards, but vary the silhouettes according to category. Use polished game UI styling, premium colors, subtle shadows, and readable labels. The sheet should feel like a collectible achievement pack for a player profile or menu screen, with clear spacing and high-quality presentation.
+
+PROMPT 14 — NEXT REWARD VARIANT TEMPLATE
+----------------------------------------
+Create a premium [REWARD NAME] for a Tic-Tac-Toe tournament app. Use a [TROPHY / MEDAL / AWARD] silhouette and follow the same visual style as the rest of the reward collection. Keep the background transparent, the game UI polished, and the reward collectible and profile-ready. Use a [COLOR PALETTE], readable title text, small accent symbols, premium metallic or polished effects, and a clear modern gaming aesthetic. Make the design feel like a premium achievement item in a competitive multiplayer game.
+
+USAGE:
+- Replace [REWARD NAME], [TROPHY / MEDAL / AWARD], and [COLOR PALETTE] with the item you want to generate.
+- Create one reward at a time in Canva.
+- Keep all items in the same asset family for consistency.
+- Save the output as separate PNG or SVG files for use in the app.
+
+
+BEST PRACTICE FOR CANVA:
+- Generate one item at a time.
+- If the result is too busy, ask for "cleaner, more minimal vector version".
+- If it needs more premium feel, add "more polished luxury gaming aesthetic".
+- If it needs better shape separation, add "clearly distinct silhouette from trophies and medals".
+- If you want a more app-ready icon, add "simple, bold, profile-friendly, readable from small size".

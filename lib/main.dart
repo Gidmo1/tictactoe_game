@@ -84,6 +84,75 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
     super.dispose();
   }
 
+  @override
+  Widget build(BuildContext context) {
+    final theme = ThemeStore.current;
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+        decoration: BoxDecoration(
+          color: theme.boardBackground,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: theme.gridColor.withValues(alpha: 0.6)),
+          boxShadow: const [
+            BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 8)),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'ENTER CODE',
+              style: TextStyle(
+                color: theme.contrastColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLength: inviteCodeLength,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp('[A-Z0-9]')),
+              ],
+              decoration: const InputDecoration(
+                filled: true,
+                fillColor: Colors.white12,
+                counterText: '',
+                hintText: 'MATCH CODE',
+                hintStyle: TextStyle(color: Colors.white54),
+                border: OutlineInputBorder(),
+              ),
+              style: const TextStyle(color: Colors.white, letterSpacing: 3),
+              onSubmitted: (_) => _tryJoin(),
+            ),
+            if (_notice != null)
+              Text(_notice!, style: const TextStyle(color: Colors.orange)),
+            const SizedBox(height: 12),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: theme.textColor,
+                backgroundColor: theme.buttonBase,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              ),
+              onPressed: _busy ? null : _tryJoin,
+              child: _busy
+                  ? const CircularProgressIndicator()
+                  : const Text('ENTER MATCH'),
+            ),
+            TextButton(
+              onPressed: () => widget.game.overlays.remove('code_input'),
+              child: const Text('CANCEL'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _tryJoin() async {
     if (!await widget.game.requireSignedInForOnlineAction()) {
       return;
@@ -111,67 +180,131 @@ class _CodeInputOverlayState extends State<_CodeInputOverlay> {
     }
   }
 
+}
+
+class _TournamentInputOverlay extends StatefulWidget {
+  final String title;
+  final String initialValue;
+  final String hintText;
+  final int maxLength;
+  final bool allowUppercase;
+  final void Function(String) onSubmit;
+
+  const _TournamentInputOverlay({
+    required this.title,
+    required this.initialValue,
+    required this.hintText,
+    required this.maxLength,
+    required this.allowUppercase,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_TournamentInputOverlay> createState() => _TournamentInputOverlayState();
+}
+
+class _TournamentInputOverlayState extends State<_TournamentInputOverlay> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ThemeStore.current;
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 360),
-        padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
-        decoration: BoxDecoration(
-          color: theme.boardBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.gridColor.withValues(alpha: 0.6)),
-          boxShadow: const [
-            BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 8)),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'JOIN MATCH',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 16),
+      decoration: BoxDecoration(
+        color: theme.boardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.gridColor.withValues(alpha: 0.6)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 8)),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            widget.title,
+            style: TextStyle(
+              color: theme.contrastColor,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _controller,
-              autofocus: true,
-              maxLength: inviteCodeLength,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp('[A-Z0-9]')),
-              ],
-              decoration: const InputDecoration(
-                filled: true,
-                fillColor: Colors.white12,
-                counterText: '',
-                hintText: 'INVITE CODE',
-                hintStyle: TextStyle(color: Colors.white54),
-                border: OutlineInputBorder(),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: widget.maxLength,
+            textCapitalization: widget.allowUppercase
+                ? TextCapitalization.characters
+                : TextCapitalization.sentences,
+            inputFormatters: [
+              if (widget.allowUppercase)
+                FilteringTextInputFormatter.allow(RegExp('[A-Z0-9]'))
+              else
+                LengthLimitingTextInputFormatter(widget.maxLength),
+            ],
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white12,
+              counterText: '',
+              hintText: widget.hintText,
+              hintStyle: const TextStyle(color: Colors.white54),
+              border: const OutlineInputBorder(),
+            ),
+            style: const TextStyle(color: Colors.white, letterSpacing: 2),
+            onSubmitted: (value) {
+              final finalValue = widget.allowUppercase
+                  ? value.trim().toUpperCase()
+                  : value.trim();
+              widget.onSubmit(finalValue);
+            },
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.textColor,
+                  backgroundColor: theme.buttonBase,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                ),
+                onPressed: () {
+                  final value = widget.allowUppercase
+                      ? _controller.text.trim().toUpperCase()
+                      : _controller.text.trim();
+                  widget.onSubmit(value);
+                },
+                child: const Text('SAVE'),
               ),
-              style: const TextStyle(color: Colors.white, letterSpacing: 3),
-              onSubmitted: (_) => _tryJoin(),
-            ),
-            if (_notice != null)
-              Text(_notice!, style: const TextStyle(color: Colors.orange)),
-            const SizedBox(height: 12),
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: theme.textColor,
-                backgroundColor: theme.buttonBase,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+              const SizedBox(width: 10),
+              TextButton(
+                onPressed: () {
+                  if (widget.allowUppercase) {
+                    widget.onSubmit(widget.initialValue);
+                  } else {
+                    widget.onSubmit(widget.initialValue);
+                  }
+                },
+                child: const Text('CANCEL'),
               ),
-              onPressed: _busy ? null : _tryJoin,
-              child: _busy
-                  ? const CircularProgressIndicator()
-                  : const Text('ENTER MATCH'),
-            ),
-            TextButton(
-              onPressed: () => widget.game.overlays.remove('code_input'),
-              child: const Text('CANCEL'),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -331,6 +464,50 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: _CodeInputOverlay(game: g),
+              ),
+            ),
+          );
+        },
+        'tournament_name_input': (context, game) {
+          final g = game as TicTacToeGame;
+          return Material(
+            color: Colors.transparent,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: _TournamentInputOverlay(
+                  title: 'TOURNAMENT NAME',
+                  initialValue: g.pendingTournamentName,
+                  hintText: 'ENTER NAME',
+                  maxLength: 24,
+                  allowUppercase: false,
+                  onSubmit: (value) {
+                    g.onTournamentNameSubmitted?.call(value);
+                    g.overlays.remove('tournament_name_input');
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+        'tournament_code_input': (context, game) {
+          final g = game as TicTacToeGame;
+          return Material(
+            color: Colors.transparent,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                child: _TournamentInputOverlay(
+                  title: 'INVITE CODE',
+                  initialValue: g.pendingTournamentInviteCode,
+                  hintText: 'ABC123',
+                  maxLength: 6,
+                  allowUppercase: true,
+                  onSubmit: (value) {
+                    g.onTournamentInviteSubmitted?.call(value);
+                    g.overlays.remove('tournament_code_input');
+                  },
+                ),
               ),
             ),
           );

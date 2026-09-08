@@ -19,7 +19,9 @@ import 'service/supabase_compat.dart' as fb;
 import 'service/competition_service.dart';
 import 'service/score_service.dart';
 import 'models/score.dart';
+import 'models/tournament.dart';
 import 'service/supabase_match_service.dart';
+import 'service/tournament_service.dart';
 import 'tictactoe.dart';
 import 'service/guest_service.dart';
 import 'components/ornate_overlay_panel.dart';
@@ -27,6 +29,7 @@ import 'components/ornate_overlay_panel.dart';
 class TicTacToeInviteScreen extends Component {
   final String matchId;
   late List<String> board;
+  int boardSize = 3;
   String playerXUID = '';
   String playerOUID = '';
   bool gameOver = false;
@@ -53,6 +56,7 @@ class TicTacToeInviteScreen extends Component {
 
   bool confettiRunning = false;
   final Random random = Random();
+  bool _tournamentResultRecorded = false;
   final List<Component> confettiPieces = [];
   bool _addedReturnButton = false;
   bool _moveInFlight = false;
@@ -68,13 +72,33 @@ class TicTacToeInviteScreen extends Component {
 
   TicTacToeInviteScreen({required this.matchId});
 
+  int _gridSizeValue(GridSize size) {
+    switch (size) {
+      case GridSize.small:
+        return 3;
+      case GridSize.medium:
+        return 4;
+      case GridSize.large:
+        return 5;
+    }
+  }
+
   @override
   Future<void> onLoad() async {
-    board = List.filled(9, '');
+    final game = findGame();
+    final tournamentData = game is TicTacToeGame
+      ? game.tournamentMatchData
+      : null;
+    final selectedGrid = tournamentData?['gridSize'];
+    boardSize = selectedGrid is GridSize
+      ? _gridSizeValue(selectedGrid)
+      : (selectedGrid is int ? selectedGrid : 3);
+    boardSize = boardSize.clamp(3, 5);
+    board = List.filled(boardSize * boardSize, '');
     currentPlayer = 'X';
 
     final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
-    layout = BoardLayout(canvasSize);
+    layout = BoardLayout(canvasSize, gridSize: boardSize);
 
     final background = RectangleComponent(
       size: canvasSize,
@@ -212,8 +236,8 @@ class TicTacToeInviteScreen extends Component {
     } catch (_) {}
 
     // Board cells
-    for (int row = 0; row < 3; row++) {
-      for (int col = 0; col < 3; col++) {
+    for (int row = 0; row < boardSize; row++) {
+      for (int col = 0; col < boardSize; col++) {
         add(
           TicTacToeCellInvite(
             row: row,
@@ -491,11 +515,11 @@ class TicTacToeInviteScreen extends Component {
                 } catch (_) {}
               });
             } catch (_) {}
-            for (int i = 0; i < 9; i++) {
+            for (int i = 0; i < board.length; i++) {
               if (board[i] != boardData1D[i]) {
                 board[i] = boardData1D[i];
-                final r = i ~/ 3;
-                final c = i % 3;
+                final r = i ~/ boardSize;
+                final c = i % boardSize;
                 final cell = children
                     .whereType<TicTacToeCellInvite>()
                     .firstWhere((cell) => cell.row == r && cell.col == c);
@@ -785,6 +809,7 @@ class TicTacToeInviteScreen extends Component {
         _showWinningLine();
       }
       _recordOnlineScore(winnerId: winnerId, didDraw: didDraw);
+      _recordTournamentResult(winnerId);
       if (!_endOverlayShown) {
         _endOverlayShown = true;
         _addEndMatchOverlaySafely(
@@ -808,6 +833,7 @@ class TicTacToeInviteScreen extends Component {
   }
 
   void _showWinningLine() {
+    if (boardSize != 3) return;
     if (_winningLine != null) return;
     const winningPatterns = [
       [0, 1, 2],
@@ -837,8 +863,8 @@ class TicTacToeInviteScreen extends Component {
   }
 
   Vector2 _cellCenter(int index) => Vector2(
-    layout.boardX + (index % 3 + 0.5) * layout.cellWidth,
-    layout.boardY + (index ~/ 3 + 0.5) * layout.cellHeight,
+    layout.boardX + (index % boardSize + 0.5) * layout.cellWidth,
+    layout.boardY + (index ~/ boardSize + 0.5) * layout.cellHeight,
   );
 
   Future<void> _recordOnlineScore({
@@ -868,6 +894,31 @@ class TicTacToeInviteScreen extends Component {
       if (gameRef is TicTacToeGame) {
         await gameRef.refreshActiveProfile();
       }
+    }
+  }
+
+  Future<void> _recordTournamentResult(String winnerId) async {
+    if (_tournamentResultRecorded || winnerId.isEmpty) return;
+    final gameRef = findGame();
+    if (gameRef is! TicTacToeGame ||
+        gameRef.pendingMatchIsTournament != true ||
+        gameRef.tournamentMatchData == null) {
+      return;
+    }
+
+    final data = gameRef.tournamentMatchData!;
+    final tournamentId = data['tournamentId']?.toString();
+    final tournamentMatchId = data['tournamentMatchId']?.toString();
+    if (tournamentId == null || tournamentMatchId == null) return;
+
+    final saved = await TournamentService().completeMatch(
+      tournamentId: tournamentId,
+      matchId: tournamentMatchId,
+      winnerUid: winnerId,
+    );
+    _tournamentResultRecorded = saved;
+    if (saved) {
+      gameRef.activeTournamentId = tournamentId;
     }
   }
 
@@ -917,8 +968,8 @@ class TicTacToeInviteScreen extends Component {
 
         // Update cell visuals
         for (int i = 0; i < 9; i++) {
-          final r = i ~/ 3;
-          final c = i % 3;
+          final r = i ~/ boardSize;
+          final c = i % boardSize;
           final cellComponent = children
               .whereType<TicTacToeCellInvite>()
               .firstWhere((cell) => cell.row == r && cell.col == c);
@@ -1018,6 +1069,17 @@ class TicTacToeInviteScreen extends Component {
             } catch (_) {}
           },
           onHome: () async {
+            final isTournamentMatch = flameGame is TicTacToeGame &&
+                flameGame.pendingMatchIsTournament;
+            if (isTournamentMatch) {
+              try {
+                dim?.removeFromParent();
+              } catch (_) {}
+              (flameGame as TicTacToeGame).router.pushReplacementNamed(
+                'tournament_detail',
+              );
+              return;
+            }
             // Decide whether to prompt sign-in on Home based on sign-in status and creator/joiner rules.
             final authUser = fb.FirebaseAuth.instance.currentUser;
             if (authUser != null) {

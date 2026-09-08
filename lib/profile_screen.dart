@@ -9,6 +9,7 @@ import 'package:flutter/material.dart' hide Route;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/tictactoe.dart';
 import 'package:tictactoe_game/components/button.dart';
+import 'package:tictactoe_game/models/reward.dart';
 import 'game_themes/theme_store.dart';
 import 'game_themes/theme.dart';
 import 'settings_screen.dart';
@@ -33,6 +34,7 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
   int offlineDraws = 0;
   String league = 'bronze';
   List<String> trophies = [];
+  List<String> unlockedRewardIds = [];
 
   @override
   Future<void> onLoad() async {
@@ -202,46 +204,12 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
       add(_signInButton!);
     }
 
-    // Trophies section
+    // Rewards section (organized by type: trophies, medals, awards)
     try {
-      if (trophies.isEmpty) {
-        final signedOut = Supabase.instance.client.auth.currentUser == null;
-        final noTrophies = TextComponent(
-          text:
-              'No trophies yet. Play and win online matches to earn trophies!',
-          position: Vector2(
-            game.size.x / 2,
-            signedOut || offlineWins + offlineLosses + offlineDraws > 0
-                ? 500
-                : 470,
-          ),
-          anchor: Anchor.center,
-          textRenderer: TextPaint(
-            style: TextStyle(
-              color: ThemeStore.current.contrastColor,
-              fontSize: 12,
-            ),
-          ),
-        );
-        add(noTrophies);
-      } else {
-        // Display trophies
-        final startX = game.size.x / 2 - (trophies.length * 48) / 2;
-        for (int i = 0; i < trophies.length; i++) {
-          final key = trophies[i];
-          try {
-            final tSprite = await game.loadSprite('$key.png');
-            final tc = SpriteComponent(
-              sprite: tSprite,
-              size: Vector2(44, 44),
-              position: Vector2(startX + i * 48, 340),
-              anchor: Anchor.topLeft,
-            );
-            add(tc);
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
+      _displayRewardsSection();
+    } catch (e) {
+      debugPrint('Error displaying rewards: $e');
+    }
 
     returnButton = _ProfileBackButton(
       position: Vector2(20, 50),
@@ -372,6 +340,123 @@ class ProfileScreen extends Component with HasGameReference<TicTacToeGame> {
     offlineStatsText.text = 'OFFLINE MATCHES';
     offlineDetailText.text =
       'W:$offlineWins          L:$offlineLosses          D:$offlineDraws';
+  }
+
+  /// Display rewards organized by type: trophies, medals, awards
+  Future<void> _displayRewardsSection() async {
+    final game = findGame()!;
+    const rewardSize = 64.0;
+    const rewardSpacing = 74.0;
+    const sectionSpacing = 30.0;
+    const startY = 335.0;
+    const labelFontSize = 10.0;
+
+    double currentY = startY;
+
+    // Get unlocked rewards
+    final trophyRewards = RewardLibrary.getByType(RewardType.trophy)
+        .where((r) => unlockedRewardIds.contains(r.id))
+        .toList();
+    final medalRewards = RewardLibrary.getByType(RewardType.medal)
+        .where((r) => unlockedRewardIds.contains(r.id))
+        .toList();
+    final awardRewards = RewardLibrary.getByType(RewardType.award)
+        .where((r) => unlockedRewardIds.contains(r.id))
+        .toList();
+
+    final hasAnyRewards =
+        trophyRewards.isNotEmpty || medalRewards.isNotEmpty || awardRewards.isNotEmpty;
+
+    if (!hasAnyRewards) {
+      // No rewards unlocked - show placeholder
+      final noRewards = TextComponent(
+        text: 'No achievements yet.\nWin tournaments and complete challenges!',
+        position: Vector2(game.size.x / 2, 470),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: ThemeStore.current.contrastColor,
+            fontSize: 11,
+            height: 1.4,
+          ),
+        ),
+      );
+      add(noRewards);
+      return;
+    }
+
+    // Helper to display reward section
+    Future<void> displayRewardSection(
+      String title,
+      List<Reward> rewards,
+    ) async {
+      if (rewards.isEmpty) return;
+
+      // Section title
+      add(
+        TextComponent(
+          text: title,
+          position: Vector2(30, currentY),
+          anchor: Anchor.centerLeft,
+          textRenderer: TextPaint(
+            style: TextStyle(
+              color: ThemeStore.current.contrastColor,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+      );
+      currentY += 16;
+
+      // Reward icons in a row
+      double iconX = 30;
+      for (final reward in rewards) {
+        try {
+          // Load sprite for reward
+          final sprite = await game.loadSprite(reward.assetPath.replaceAll('assets/images/', ''));
+          final rewardSprite = SpriteComponent(
+            sprite: sprite,
+            size: Vector2(rewardSize, rewardSize),
+            position: Vector2(iconX, currentY),
+            anchor: Anchor.topLeft,
+          );
+          add(rewardSprite);
+
+          // Reward label below icon
+          add(
+            TextComponent(
+              text: reward.name,
+              position: Vector2(iconX + rewardSize / 2, currentY + rewardSize + 4),
+              anchor: Anchor.topCenter,
+              textRenderer: TextPaint(
+                style: TextStyle(
+                  color: ThemeStore.current.contrastColor,
+                  fontSize: labelFontSize,
+                ),
+              ),
+            ),
+          );
+
+          iconX += rewardSpacing;
+          if (iconX + rewardSize > game.size.x - 20) {
+            // Wrap to next row
+            iconX = 30;
+            currentY += rewardSize + 22;
+          }
+        } catch (e) {
+          debugPrint('Error loading reward sprite for ${reward.name}: $e');
+        }
+      }
+
+      currentY += rewardSize + sectionSpacing;
+    }
+
+    // Display each section
+    await displayRewardSection('TROPHIES', trophyRewards);
+    if (medalRewards.isNotEmpty) await displayRewardSection('MEDALS', medalRewards);
+    if (awardRewards.isNotEmpty) await displayRewardSection('AWARDS', awardRewards);
   }
 }
 

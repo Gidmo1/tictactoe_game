@@ -8,11 +8,14 @@ class ConfirmationOverlay extends PositionComponent {
   final VoidCallback onYes;
   final VoidCallback onNo;
   final GameTheme theme;
+  final String message;
 
   ConfirmationOverlay({
     required this.onYes,
     required this.onNo,
     required this.theme,
+    this.message =
+      'Are you sure that you want to leave this mode?\nYou will lose the current game.',
   }) : super(
          size: Vector2(320, 180),
          anchor: Anchor.center,
@@ -31,8 +34,7 @@ class ConfirmationOverlay extends PositionComponent {
 
     add(
       TextComponent(
-        text:
-            "Are you sure that you want to leave this mode? \n               You will lose the current game.",
+        text: message,
         anchor: Anchor.topCenter,
         position: Vector2(size.x / 2, 30),
         textRenderer: TextPaint(

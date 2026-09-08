@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async' as async;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -25,6 +25,12 @@ import 'join_match_screen.dart';
 import 'link_handler.dart';
 import 'service/auth_service.dart';
 import 'tournament_match_screen.dart';
+import 'tournaments_screen.dart';
+import 'create_tournament_screen.dart';
+import 'join_tournament_screen.dart';
+import 'tournament_detail_screen.dart';
+import 'tournament_match_play_screen.dart';
+import 'tournament_board_screen.dart';
 
 import 'vs_ai_board.dart';
 import 'vs_computer_setup_screen.dart';
@@ -66,6 +72,25 @@ class TicTacToeGame extends FlameGame
   String? pendingInviteCode;
   String currentRoute = 'menu';
   VsComputerMatchConfig? vsComputerConfig;
+  String? activeTournamentId;
+  Map<String, dynamic>? tournamentMatchData;
+
+  String pendingTournamentInviteCode = '';
+  String pendingTournamentName = '';
+  String? pendingTournamentAccessId;
+  async.Timer? _messageTimer;
+
+  void showTransientMessage(String message, {Duration duration = const Duration(seconds: 3)}) {
+    _messageTimer?.cancel();
+    lastMessage = message;
+    overlays.add('message');
+    _messageTimer = async.Timer(duration, () {
+      overlays.remove('message');
+      _messageTimer = null;
+    });
+  }
+  void Function(String)? onTournamentInviteSubmitted;
+  void Function(String)? onTournamentNameSubmitted;
 
   Future<bool> requireSignedInForOnlineAction() async {
     if (Supabase.instance.client.auth.currentUser != null) {
@@ -140,7 +165,11 @@ class TicTacToeGame extends FlameGame
       );
     } catch (_) {}
     try {
+      _messageTimer?.cancel();
+      _messageTimer = null;
       overlays.remove('code_input');
+      overlays.remove('tournament_name_input');
+      overlays.remove('tournament_code_input');
       overlays.remove('message');
       overlays.remove('confirmation');
     } catch (_) {}
@@ -257,6 +286,14 @@ class TicTacToeGame extends FlameGame
 
   void openSettings({required String returnRoute}) {
     router.pushNamed('settings_$returnRoute');
+  }
+
+  void openTournamentDetails(String tournamentId) {
+    activeTournamentId = tournamentId;
+    router.pushReplacement(
+      Route(() => TournamentDetailScreen()),
+      name: 'tournament_detail_$tournamentId',
+    );
   }
 
   Future<void> refreshActiveProfile() async {
@@ -423,6 +460,12 @@ class TicTacToeGame extends FlameGame
         'competition': Route(() => CompetitionScreen()),
         'privacy': Route(() => PrivacyOptionsScreen()),
         'tournament': Route(() => TournamentMatchScreen()),
+        'tournaments': Route(() => TournamentsScreen()),
+        'create_tournament': Route(() => CreateTournamentScreen()),
+        'join_tournament': Route(() => JoinTournamentScreen()),
+        'tournament_detail': Route(() => TournamentDetailScreen()),
+        'tournament_match_play': Route(() => TournamentMatchPlayScreen()),
+        'tournament_board': Route(() => TournamentBoardScreen()),
         'themes': Route(() => ThemePickerScreen()),
       },
       onRouteChanged: (name) => handleRouteChange(name),
@@ -634,17 +677,17 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     add(btnAI);
     _themedChildren.add(btnAI);
 
-    final btnComp = ButtonComponent(
-      label: 'COMPETITION',
+    final btnTournaments = ButtonComponent(
+      label: 'TOURNAMENTS',
       position: game.size / 2 + Vector2(0, 120),
       size: Vector2(220, 50),
       theme: t,
       onPressed: () async {
-        game.router.pushNamed('competition');
+        game.router.pushNamed('tournaments');
       },
     );
-    add(btnComp);
-    _themedChildren.add(btnComp);
+    add(btnTournaments);
+    _themedChildren.add(btnTournaments);
   }
 }
 

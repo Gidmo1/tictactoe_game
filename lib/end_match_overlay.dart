@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:flame/components.dart';
+import 'package:flame/effects.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tictactoe_game/components/button.dart';
 import 'package:tictactoe_game/components/ornate_overlay_panel.dart';
@@ -16,6 +19,9 @@ class EndMatchOverlay extends PositionComponent {
   final String? scoreOText;
   final Color? scoreXColor;
   final Color? scoreOColor;
+  bool _confettiRunning = false;
+  final Random _random = Random();
+  final List<Component> _confettiPieces = [];
 
   EndMatchOverlay({
     required this.didWin,
@@ -43,6 +49,10 @@ class EndMatchOverlay extends PositionComponent {
     final gameRef = findGame();
     if (gameRef != null) {
       position = Vector2(gameRef.size.x / 2, gameRef.size.y / 2);
+    }
+
+    if (didWin && !didDraw) {
+      _startConfetti();
     }
 
     add(OrnateOverlayPanel(size: size, theme: theme));
@@ -79,7 +89,7 @@ class EndMatchOverlay extends PositionComponent {
           TextComponent(
             text: scoreline ?? '0  -  0',
             anchor: Anchor.center,
-            position: Vector2(size.x / 2, size.y / 2 + 16),
+            position: Vector2(size.x / 2, size.y / 2 + 30),
             textRenderer: TextPaint(
               style: smallTextStyle.copyWith(
                 fontSize: 22,
@@ -92,7 +102,7 @@ class EndMatchOverlay extends PositionComponent {
           TextComponent(
             text: scoreXText!,
             anchor: Anchor.centerRight,
-            position: Vector2(size.x / 2 - 10, size.y / 2 + 16),
+            position: Vector2(size.x / 2 - 36, size.y / 2 + 6),
             textRenderer: TextPaint(
               style: smallTextStyle.copyWith(
                 color: scoreXColor ?? smallTextStyle.color,
@@ -106,7 +116,7 @@ class EndMatchOverlay extends PositionComponent {
           TextComponent(
             text: scoreOText!,
             anchor: Anchor.centerLeft,
-            position: Vector2(size.x / 2 + 10, size.y / 2 + 16),
+            position: Vector2(size.x / 2 + 36, size.y / 2 + 6),
             textRenderer: TextPaint(
               style: smallTextStyle.copyWith(
                 color: scoreOColor ?? smallTextStyle.color,
@@ -157,7 +167,7 @@ class EndMatchOverlay extends PositionComponent {
           TextComponent(
             text: scoreline ?? '0  -  0',
             anchor: Anchor.center,
-            position: Vector2(size.x / 2, 110),
+            position: Vector2(size.x / 2, 122),
             textRenderer: TextPaint(
               style: smallTextStyle.copyWith(
                 fontSize: 22,
@@ -170,7 +180,7 @@ class EndMatchOverlay extends PositionComponent {
           TextComponent(
             text: scoreXText!,
             anchor: Anchor.centerRight,
-            position: Vector2(size.x / 2 - 10, 110),
+            position: Vector2(size.x / 2 - 36, 94),
             textRenderer: TextPaint(
               style: smallTextStyle.copyWith(
                 color: scoreXColor ?? smallTextStyle.color,
@@ -184,7 +194,7 @@ class EndMatchOverlay extends PositionComponent {
           TextComponent(
             text: scoreOText!,
             anchor: Anchor.centerLeft,
-            position: Vector2(size.x / 2 + 10, 110),
+            position: Vector2(size.x / 2 + 36, 94),
             textRenderer: TextPaint(
               style: smallTextStyle.copyWith(
                 color: scoreOColor ?? smallTextStyle.color,
@@ -257,5 +267,60 @@ class EndMatchOverlay extends PositionComponent {
         );
       }
     }
+  }
+
+  void _startConfetti() {
+    if (_confettiRunning) return;
+    _confettiRunning = true;
+
+    void spawnConfettiPiece() {
+      if (!_confettiRunning || !isMounted) return;
+
+      final confettiSize = 4 + _random.nextDouble() * 6;
+      final paint = Paint()
+        ..color = Color.fromARGB(
+          255,
+          _random.nextInt(256),
+          _random.nextInt(256),
+          _random.nextInt(256),
+        );
+
+      final confetti = RectangleComponent(
+        size: Vector2(confettiSize, confettiSize * 1.5),
+        paint: paint,
+        position: Vector2(_random.nextDouble() * size.x, -10),
+        anchor: Anchor.center,
+      );
+
+      _confettiPieces.add(confetti);
+      add(confetti);
+
+      final fallDuration = 1.5 + _random.nextDouble() * 1.5;
+      confetti.add(
+        MoveEffect.to(
+          Vector2(confetti.x, size.y + 50),
+          EffectController(duration: fallDuration, curve: Curves.linear),
+          onComplete: () {
+            confetti.removeFromParent();
+            _confettiPieces.remove(confetti);
+          },
+        ),
+      );
+
+      confetti.add(
+        RotateEffect.by(
+          _random.nextDouble() * pi * 4,
+          EffectController(duration: fallDuration, curve: Curves.linear),
+        ),
+      );
+
+      Future.delayed(const Duration(milliseconds: 15), spawnConfettiPiece);
+    }
+
+    spawnConfettiPiece();
+    Future.delayed(
+      const Duration(milliseconds: 2400),
+      () => _confettiRunning = false,
+    );
   }
 }
