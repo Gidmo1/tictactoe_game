@@ -4,6 +4,19 @@ enum TournamentType {
   official,
 }
 
+/// Competition format determines how opponents are selected.
+enum TournamentFormat {
+  /// Official tournament: match any registered player who is currently queued.
+  liveMatchmaking,
+
+  /// Official knockout tournament: play only the bracket-assigned opponent.
+  cup,
+
+  /// Private tournament: the host starts a bracket when ready; matches are
+  /// played during their round deadline rather than at fixed times.
+  flexibleBracket,
+}
+
 /// Tournament status
 enum TournamentStatus {
   waiting,    // Waiting for players to join
@@ -31,6 +44,7 @@ class Tournament {
   final String id;
   final String name;
   final TournamentType type;
+  final TournamentFormat format;
   final TournamentStatus status;
   final String createdBy; // User ID of creator (for private) or 'admin' (for official)
   final DateTime createdAt;
@@ -44,11 +58,15 @@ class Tournament {
   final String description;
   final Map<String, dynamic> bracket; // Bracket structure / match results
   final String? winnerUid; // User ID of tournament winner
+  final int roundDeadlineHours;
+  final DateTime? participantsLockedAt;
+  final DateTime? updatedAt;
 
   Tournament({
     required this.id,
     required this.name,
     required this.type,
+    this.format = TournamentFormat.flexibleBracket,
     required this.status,
     required this.createdBy,
     required this.createdAt,
@@ -62,6 +80,9 @@ class Tournament {
     required this.description,
     this.bracket = const {},
     this.winnerUid,
+    this.roundDeadlineHours = 48,
+    this.participantsLockedAt,
+    this.updatedAt,
   });
 
   /// Check if tournament is full
@@ -70,11 +91,18 @@ class Tournament {
   /// Check if tournament can accept new joiners
   bool get canJoin => status == TournamentStatus.waiting && !isFull;
 
+  bool get isBracketBased =>
+      format == TournamentFormat.cup ||
+      format == TournamentFormat.flexibleBracket;
+
+  bool get participantsAreLocked => participantsLockedAt != null || status != TournamentStatus.waiting;
+
   /// Copy with optional overrides
   Tournament copyWith({
     String? id,
     String? name,
     TournamentType? type,
+    TournamentFormat? format,
     TournamentStatus? status,
     String? createdBy,
     DateTime? createdAt,
@@ -88,11 +116,15 @@ class Tournament {
     String? description,
     Map<String, dynamic>? bracket,
     String? winnerUid,
+    int? roundDeadlineHours,
+    DateTime? participantsLockedAt,
+    DateTime? updatedAt,
   }) {
     return Tournament(
       id: id ?? this.id,
       name: name ?? this.name,
       type: type ?? this.type,
+      format: format ?? this.format,
       status: status ?? this.status,
       createdBy: createdBy ?? this.createdBy,
       createdAt: createdAt ?? this.createdAt,
@@ -106,6 +138,9 @@ class Tournament {
       description: description ?? this.description,
       bracket: bracket ?? this.bracket,
       winnerUid: winnerUid ?? this.winnerUid,
+      roundDeadlineHours: roundDeadlineHours ?? this.roundDeadlineHours,
+      participantsLockedAt: participantsLockedAt ?? this.participantsLockedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -124,6 +159,7 @@ class TournamentMatch {
   final int position; // Position in round
   final bool isCompleted;
   final DateTime? completedAt;
+  final DateTime? deadline;
   final String? boardStateJson; // Store final board if needed
 
   TournamentMatch({
@@ -136,6 +172,7 @@ class TournamentMatch {
     required this.position,
     this.isCompleted = false,
     this.completedAt,
+    this.deadline,
     this.boardStateJson,
   });
 
@@ -151,6 +188,7 @@ class TournamentMatch {
     int? position,
     bool? isCompleted,
     DateTime? completedAt,
+    DateTime? deadline,
     String? boardStateJson,
   }) {
     return TournamentMatch(
@@ -163,6 +201,7 @@ class TournamentMatch {
       position: position ?? this.position,
       isCompleted: isCompleted ?? this.isCompleted,
       completedAt: completedAt ?? this.completedAt,
+      deadline: deadline ?? this.deadline,
       boardStateJson: boardStateJson ?? this.boardStateJson,
     );
   }
