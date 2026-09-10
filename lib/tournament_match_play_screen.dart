@@ -22,7 +22,6 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
   bool _opponentOnline = false;
   bool _presenceConnected = false;
   bool _walkoverAvailable = false;
-  double _waitingSeconds = 0;
   dynamic _presenceChannel;
   TextComponent? _presenceStatus;
 
@@ -362,8 +361,12 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
   void update(double dt) {
     super.update(dt);
     if (isLoading || currentMatch == null || _opponentOnline) return;
-    _waitingSeconds += dt;
-    if (_waitingSeconds >= 30 && !_walkoverAvailable) {
+    final deadline = DateTime.tryParse(
+      currentMatch!['deadline']?.toString() ?? '',
+    );
+    if (deadline != null &&
+        DateTime.now().isAfter(deadline) &&
+        !_walkoverAvailable) {
       _walkoverAvailable = true;
       _updatePresenceStatus();
       _addWalkoverButton();
@@ -385,10 +388,9 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
 
   Future<void> _claimWalkover() async {
     if (currentMatch == null || opponent == null || _opponentOnline) return;
-    final success = await tournamentService.completeMatch(
+    final success = await tournamentService.forfeitMatch(
       tournamentId: tournamentId,
       matchId: currentMatch!['id'] as String,
-      winnerUid: userUid,
     );
     _presenceStatus?.text = success
         ? 'WALKOVER CONFIRMED - YOU ADVANCE'
