@@ -24,6 +24,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
   bool _walkoverAvailable = false;
   dynamic _presenceChannel;
   TextComponent? _presenceStatus;
+  TextComponent? _loadingText;
 
   @override
   Future<void> onLoad() async {
@@ -41,6 +42,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
         priority: -1,
       ),
     );
+    _renderLoading(canvasSize);
 
     // Load tournament and match
     await _loadTournamentAndMatch();
@@ -53,7 +55,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       if (tournament == null) {
         errorMessage = 'Tournament not found';
         isLoading = false;
-        _renderContent();
+        _renderSafely();
         return;
       }
 
@@ -66,23 +68,65 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       if (currentMatch == null) {
         errorMessage = 'No pending matches for you';
         isLoading = false;
-        _renderContent();
+        _renderSafely();
         return;
       }
 
       // Determine opponent
-      opponent = currentMatch!['player1'] == userUid
+      final opponentValue = currentMatch!['player1'] == userUid
           ? currentMatch!['player2']
           : currentMatch!['player1'];
+      opponent = opponentValue?.toString();
 
       isLoading = false;
-      _renderContent();
+      _renderSafely();
       _connectToMatchPresence();
     } catch (e) {
       errorMessage = 'Error loading tournament: $e';
       isLoading = false;
       debugPrint('Error: $e');
+      _renderSafely();
+    }
+  }
+
+  void _renderLoading(Vector2 canvasSize) {
+    _loadingText = TextComponent(
+      text: 'LOADING TOURNAMENT MATCH...',
+      position: Vector2(canvasSize.x / 2, canvasSize.y / 2),
+      anchor: Anchor.center,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: ThemeStore.current.contrastColor,
+          fontSize: 16,
+        ),
+      ),
+    );
+    add(_loadingText!);
+  }
+
+  void _renderSafely() {
+    _loadingText?.removeFromParent();
+    _loadingText = null;
+    try {
       _renderContent();
+    } catch (e, stackTrace) {
+      debugPrint('Could not render tournament match screen: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      final gameRef = findGame();
+      if (gameRef == null) return;
+      add(
+        TextComponent(
+          text: 'COULD NOT OPEN MATCH',
+          position: Vector2(gameRef.size.x / 2, gameRef.size.y / 2),
+          anchor: Anchor.center,
+          textRenderer: TextPaint(
+            style: TextStyle(
+              color: const Color(0xFFFF6B6B),
+              fontSize: 16,
+            ),
+          ),
+        ),
+      );
     }
   }
 
@@ -153,9 +197,11 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
     );
 
     // Match info
+    final position =
+        (currentMatch!['position'] as num?)?.toInt() ?? 0;
     add(
       TextComponent(
-        text: 'ROUND ${currentMatch!['round']} • MATCH ${currentMatch!['position'] + 1}',
+        text: 'ROUND ${currentMatch!['round']} • MATCH ${position + 1}',
         position: Vector2(canvasSize.x / 2, 60),
         anchor: Anchor.center,
         textRenderer: TextPaint(
@@ -168,9 +214,14 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
     );
 
     // Opponent display
+    final opponentLabel = opponent == null
+        ? 'OPPONENT'
+        : opponent!.length > 8
+            ? opponent!.substring(0, 8).toUpperCase()
+            : opponent!.toUpperCase();
     add(
       TextComponent(
-        text: 'VS ${opponent?.substring(0, 8).toUpperCase() ?? "OPPONENT"}',
+        text: 'VS $opponentLabel',
         position: Vector2(canvasSize.x / 2, 90),
         anchor: Anchor.center,
         textRenderer: TextPaint(
