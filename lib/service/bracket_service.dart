@@ -13,7 +13,7 @@ class BracketService {
     int roundDeadlineHours = 48,
     bool shuffle = true,
     TournamentFormat format = TournamentFormat.flexibleBracket,
-  ) {
+  }) {
     final uniqueParticipants = <String>[];
     for (final participant in participants) {
       final normalized = participant.trim();
@@ -265,7 +265,7 @@ class BracketService {
       if (key.startsWith('round_') && value is List) {
         for (final match in value) {
           if (match is Map && match['id'] == matchId) {
-            matchToComplete = match;
+            matchToComplete = match.cast<String, dynamic>();
           }
         }
       }
