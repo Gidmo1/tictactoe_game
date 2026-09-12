@@ -182,14 +182,23 @@ class TicTacToeGame extends FlameGame
         }
       });
     }
-    // Show a quick Flutter overlay to avoid a black screen when entering
-    // the Competition route. It will be removed by the CompetitionScreen
-    // itself once the Flame background sprite is ready.
+    // Show a quick Flutter overlay to avoid a black screen when entering routes
+    // that load their Flame content asynchronously. Each fallback overlay is
+    // removed by the route's screen itself once its content is ready.
     try {
       if (routeName == 'competition') {
         overlays.add('competition_fallback');
       } else {
         overlays.remove('competition_fallback');
+      }
+    } catch (_) {}
+    try {
+      final enteringTournamentMatch = routeName == 'tournament_match_play' ||
+          (routeName == 'invite' && pendingMatchIsTournament == true);
+      if (enteringTournamentMatch) {
+        overlays.add('match_loading_fallback');
+      } else {
+        overlays.remove('match_loading_fallback');
       }
     } catch (_) {}
     debugPrint(

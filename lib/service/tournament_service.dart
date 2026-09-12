@@ -157,7 +157,8 @@ class TournamentService {
           .from('tournaments')
           .select()
           .eq('id', tournamentId)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(const Duration(seconds: 15));
 
       if (response == null) {
         debugPrint('[GET] Tournament $tournamentId not found!');
@@ -179,7 +180,8 @@ class TournamentService {
           .from('tournaments')
           .select()
           .eq('invite_code', inviteCode)
-          .maybeSingle();
+          .maybeSingle()
+          .timeout(const Duration(seconds: 15));
 
       if (response == null) return null;
       return _rowToTournament(response);

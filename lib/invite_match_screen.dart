@@ -1,6 +1,5 @@
 // ignore_for_file: dead_code
-
-import 'dart:async';
+import 'dart:async' as async_tools;
 import 'dart:math';
 import 'service/supabase_compat.dart';
 import 'package:flame/components.dart';
@@ -11,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tictactoe_game/end_match_overlay.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
 import 'components/auth_gate_component.dart';
+import 'package:tictactoe_game/components/button.dart';
 import 'package:flame_audio/flame_audio.dart';
 import 'package:tictactoe_game/settings_screen.dart';
 import 'package:tictactoe_game/board_layout.dart';
@@ -25,7 +25,7 @@ import 'service/tournament_service.dart';
 import 'tictactoe.dart';
 import 'service/guest_service.dart';
 import 'components/ornate_overlay_panel.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 class TicTacToeInviteScreen extends Component {
   final String matchId;
   late List<String> board;
@@ -44,16 +44,13 @@ class TicTacToeInviteScreen extends Component {
   Sprite? smallXSprite;
   Sprite? smallOSprite;
   // removed per-lobby found message; lobby now shows the 'Found opponent' notice
-
   late final BoardLayout layout;
-
   final FirebaseFirestore firestore = FirebaseFirestore.instance;
   final FirebaseFunctions functions = FirebaseFunctions.instanceFor(
     region: 'us-central1',
   );
-  StreamSubscription<DocumentSnapshot>? matchSubscription;
-  StreamSubscription<Map<String, dynamic>>? supabaseMatchSubscription;
-
+  async_tools.StreamSubscription<DocumentSnapshot>? matchSubscription;
+  async_tools.StreamSubscription<Map<String, dynamic>>? supabaseMatchSubscription;
   bool confettiRunning = false;
   final Random random = Random();
   bool _tournamentResultRecorded = false;
@@ -63,15 +60,24 @@ class TicTacToeInviteScreen extends Component {
   bool _endOverlayShown = false;
   bool _scoreRecorded = false;
   bool _matchReady = false;
+  bool _isPaused = false;
+  int _pausesRemaining = 3;
+  async_tools.Timer? _pauseTimer;
+  int _pauseSecondsRemaining = 0;
+  TextComponent? _roundTimerText;
+  static const int _disconnectGraceSeconds = 15;
+  dynamic _activeMatchPresenceChannel;
+  async_tools.Timer? _disconnectGraceTimer;
+  String? _activeOpponentId;
+  String? _disconnectedOpponentId;
+  int _disconnectSecondsRemaining = _disconnectGraceSeconds;
   _WinningLine? _winningLine;
   TextComponent? _inviteCodeText;
   late TextComponent _xScoreText;
   late TextComponent _scoreValueText;
   late TextComponent _oScoreText;
   _MatchLoadingModal? _loading;
-
   TicTacToeInviteScreen({required this.matchId});
-
   int _gridSizeValue(GridSize size) {
     switch (size) {
       case GridSize.small:
@@ -82,7 +88,6 @@ class TicTacToeInviteScreen extends Component {
         return 5;
     }
   }
-
   @override
   Future<void> onLoad() async {
     final game = findGame();
@@ -96,17 +101,14 @@ class TicTacToeInviteScreen extends Component {
     boardSize = boardSize.clamp(3, 5);
     board = List.filled(boardSize * boardSize, '');
     currentPlayer = 'X';
-
     final canvasSize = findGame()?.size ?? BoardLayout.defaultScreenSize;
     layout = BoardLayout(canvasSize, gridSize: boardSize);
-
     final background = RectangleComponent(
       size: canvasSize,
       position: Vector2.zero(),
       paint: Paint()..color = ThemeStore.current.boardBackground,
     )..priority = -2;
     add(background);
-
     final inviteGame = findGame();
     final inviteCode = inviteGame is TicTacToeGame
       ? inviteGame.pendingInviteCode
@@ -118,7 +120,6 @@ class TicTacToeInviteScreen extends Component {
       inviteCode: inviteCode,
     )..priority = 100;
     add(_loading!);
-
     // Message text
     final titleY = layout.boardY - layout.cellHeight * 0.5;
     messageText = TextComponent(
@@ -134,7 +135,6 @@ class TicTacToeInviteScreen extends Component {
       ),
     );
     add(messageText);
-
     _xScoreText = TextComponent(
       text: 'X',
       position: Vector2(canvasSize.x / 2 - 76, 104),
@@ -174,13 +174,11 @@ class TicTacToeInviteScreen extends Component {
     add(_xScoreText);
     add(_scoreValueText);
     add(_oScoreText);
-
     final topPadding = max(layout.boardY * 0.06, 32.0);
     final nameFontSize = layout.screenSize.x * 0.04;
     final iconSize = layout.screenSize.x * 0.078;
     final leftNameX = layout.boardX + 10;
     final rightNameX = canvasSize.x - layout.boardX - 10;
-
     // Player name placeholders (left and right)
     playerXNameText = TextComponent(
       text: '',
@@ -195,7 +193,6 @@ class TicTacToeInviteScreen extends Component {
       ),
     )..priority = 10010;
     add(playerXNameText);
-
     playerONameText = TextComponent(
       text: '',
       position: Vector2(rightNameX, topPadding),
@@ -209,7 +206,21 @@ class TicTacToeInviteScreen extends Component {
       ),
     )..priority = 10010;
     add(playerONameText);
-
+    if (game is TicTacToeGame && game.pendingMatchIsTournament) {
+      _roundTimerText = TextComponent(
+        text: 'ROUND TIME REMAINING: --',
+        position: Vector2(canvasSize.x / 2, 142),
+        anchor: Anchor.center,
+        textRenderer: TextPaint(
+          style: TextStyle(
+            color: ThemeStore.current.contrastColor.withValues(alpha: 0.8),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      add(_roundTimerText!);
+    }
     // Load small symbol icons next to names
     try {
       smallXSprite =
@@ -222,7 +233,6 @@ class TicTacToeInviteScreen extends Component {
       )..priority = 10011;
       add(playerXSymbolSprite!);
     } catch (_) {}
-
     try {
       smallOSprite =
           await (findGame()?.loadSprite('O.png') ?? Sprite.load('O.png'));
@@ -234,7 +244,6 @@ class TicTacToeInviteScreen extends Component {
       )..priority = 10011;
       add(playerOSymbolSprite!);
     } catch (_) {}
-
     // Board cells
     for (int row = 0; row < boardSize; row++) {
       for (int col = 0; col < boardSize; col++) {
@@ -252,10 +261,20 @@ class TicTacToeInviteScreen extends Component {
         );
       }
     }
-
+    if (game is TicTacToeGame && game.pendingMatchIsTournament) {
+      add(
+        ButtonComponent(
+          label: 'PAUSE',
+          position: Vector2(canvasSize.x / 2, canvasSize.y - 56),
+          size: Vector2(150, 38),
+          theme: ThemeStore.current,
+          onPressed: _pauseMatch,
+        ),
+      );
+    }
     await _startSupabaseMatch();
+    _removeMatchLoadingFallback();
     return;
-
     // Firestore listener for match updates
     // Choose collection based on whether the pending match is a tournament
     final gameRef = findGame();
@@ -264,7 +283,6 @@ class TicTacToeInviteScreen extends Component {
             (gameRef as dynamic).pendingMatchIsTournament == true)
         ? 'tournamentMatches'
         : 'matches';
-
     matchSubscription = firestore
         .collection(collectionName)
         .doc(matchId)
@@ -273,7 +291,6 @@ class TicTacToeInviteScreen extends Component {
           (snapshot) {
             final data = snapshot.data();
             if (data == null) return;
-
             // Add return button only for non-tournament matches
             if (data['tournament'] != true && !_addedReturnButton) {
               final buttonSize = layout.cellHeight * 0.45;
@@ -287,12 +304,10 @@ class TicTacToeInviteScreen extends Component {
               );
               _addedReturnButton = true;
             }
-
             final boardData1D = List<String>.from(data['board']);
             // store player ids for mapping board values to X/O
             playerXUID = (data['playerXUID'] ?? '') as String;
             playerOUID = (data['playerOUID'] ?? '') as String;
-
             // Update displayed player names if available. Support nested player objects
             try {
               final px = data['playerX'] as Map<String, dynamic>?;
@@ -333,14 +348,12 @@ class TicTacToeInviteScreen extends Component {
               if (poName.isEmpty) {
                 poName = playerOUID.isNotEmpty ? playerOUID : 'Player O';
               }
-
               // Strip any trailing country in parentheses if present (we show
               // country via a flag icon instead).
               try {
                 pxName = pxName.replaceAll(RegExp(r"\s*\(.*\)\s*"), '');
                 poName = poName.replaceAll(RegExp(r"\s*\(.*\)\s*"), '');
               } catch (_) {}
-
               // Display left = current player, right = opponent
               final flameGame = findGame();
               final myUID = fb.FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -390,7 +403,6 @@ class TicTacToeInviteScreen extends Component {
                   }
                 }
               }
-
               // Load and show country flag icons if profile country available.
               Future.microtask(() async {
                 try {
@@ -408,7 +420,6 @@ class TicTacToeInviteScreen extends Component {
                       return true;
                     }
                   })();
-
                   // choose profiles for left/right based on leftIsX and who is X in match
                   Map<String, dynamic>? leftProfile;
                   Map<String, dynamic>? rightProfile;
@@ -419,7 +430,6 @@ class TicTacToeInviteScreen extends Component {
                     leftProfile = poProfile;
                     rightProfile = pxProfile;
                   }
-
                   // Helper to create/update a flag sprite for a side
                   Future<void> ensureFlag(
                     bool isLeft,
@@ -449,7 +459,6 @@ class TicTacToeInviteScreen extends Component {
                         }
                         return;
                       }
-
                       final path = 'flags/$key.png';
                       Sprite? sp;
                       try {
@@ -509,7 +518,6 @@ class TicTacToeInviteScreen extends Component {
                       }
                     } catch (_) {}
                   }
-
                   await ensureFlag(true, leftProfile);
                   await ensureFlag(false, rightProfile);
                 } catch (_) {}
@@ -526,16 +534,13 @@ class TicTacToeInviteScreen extends Component {
                 if (board[i] != '') cell.mark(board[i]);
               }
             }
-
             currentPlayer = data['currentTurn'] ?? 'X';
             // Infer gameOver locally if server lags or if the board is full.
             final winnerUID = (data['winnerUID'] ?? '') as String? ?? '';
             final serverGameOver = data['gameOver'] ?? false;
             final boardFull = board.every((cell) => cell.isNotEmpty);
             gameOver = serverGameOver || winnerUID.isNotEmpty || boardFull;
-
             // 'Found' notification is shown in the FriendLobby before routing.
-
             if (gameOver) {
               final fb.User? firebaseUser =
                   fb.FirebaseAuth.instance.currentUser;
@@ -546,7 +551,6 @@ class TicTacToeInviteScreen extends Component {
               // Cancel any pending AI scheduling so client won't trigger further moves (AI removed)
               messageText.text = overlayMessage;
               _startConfetti();
-
               // Show a dim background and end-match overlay (prompt sign-in after first match)
               try {
                 final flameGame = findGame();
@@ -560,7 +564,6 @@ class TicTacToeInviteScreen extends Component {
                   );
                 }
               } catch (_) {}
-
               // For tournament matches, submit results via dedicated callable.
               try {
                 final isTournament = data['tournament'] == true;
@@ -661,7 +664,6 @@ class TicTacToeInviteScreen extends Component {
                   });
                 }
               } catch (_) {}
-
               // Server-side trigger will handle awarding XP and marking scores.
               // The client should not write score documents.
             } else {
@@ -671,7 +673,6 @@ class TicTacToeInviteScreen extends Component {
               messageText.text = currentPlayer == myUID
                   ? "Your turn"
                   : "Opponent's turn";
-
               // AI opponent handling removed.
             }
           },
@@ -707,7 +708,6 @@ class TicTacToeInviteScreen extends Component {
             } catch (_) {}
           },
         );
-
     // Create match via Cloud Function if it doesn’t exist yet
     final doc = await firestore.collection(collectionName).doc(matchId).get();
     if (!doc.exists) {
@@ -723,10 +723,8 @@ class TicTacToeInviteScreen extends Component {
       }
     }
   }
-
   // Scoring for tournament matches is handled server-side; client must not
   // write scores.
-
   Future<void> _startSupabaseMatch() async {
     final service = SupabaseMatchService();
     final userId = service.userId;
@@ -734,7 +732,6 @@ class TicTacToeInviteScreen extends Component {
       messageText.text = 'Sign in required';
       return;
     }
-
     try {
       await service.reconnect(matchId);
       supabaseMatchSubscription = service.watchMatch(matchId).listen(
@@ -744,12 +741,158 @@ class TicTacToeInviteScreen extends Component {
           messageText.text = 'Connection lost. Reconnecting...';
         },
       );
+      _connectActiveMatchPresence();
     } catch (error) {
       debugPrint('Supabase match reconnect failed: $error');
       messageText.text = 'Unable to reconnect to match';
     }
   }
-
+  Future<void> _connectActiveMatchPresence() async {
+    final game = findGame();
+    if (game is! TicTacToeGame || game.pendingMatchIsTournament != true) {
+      return;
+    }
+    final currentUserId = SupabaseMatchService().userId;
+    final data = game.tournamentMatchData;
+    final player1 = data?['player1']?.toString();
+    final player2 = data?['player2']?.toString();
+    final opponentId = player1 == currentUserId ? player2 : player1;
+    if (currentUserId == null || opponentId == null || opponentId.isEmpty) {
+      return;
+    }
+    _activeOpponentId = opponentId;
+    try {
+      final channel = Supabase.instance.client.channel(
+        'active_match_$matchId',
+      ) as dynamic;
+      _activeMatchPresenceChannel = channel;
+      channel.onPresenceSync((dynamic _) {
+        _refreshActiveMatchPresence(channel);
+      });
+      channel.onPresenceJoin((dynamic _) {
+        _refreshActiveMatchPresence(channel);
+      });
+      channel.onPresenceLeave((dynamic _) {
+        _refreshActiveMatchPresence(channel);
+      });
+      channel.onBroadcast(
+        event: 'tournament_pause',
+        callback: (dynamic payload) {
+          final seconds = payload is Map
+              ? int.tryParse(payload['seconds']?.toString() ?? '') ?? 15
+              : 15;
+          _showOpponentPause(seconds);
+        },
+      );
+      channel.onBroadcast(
+        event: 'tournament_resume',
+        callback: (dynamic _) {
+          _continueMatch(broadcast: false);
+        },
+      );
+      await channel.subscribe();
+      await channel.track({'user_id': currentUserId});
+      _refreshActiveMatchPresence(channel);
+    } catch (error) {
+      debugPrint('Active match presence unavailable: $error');
+    }
+  }
+  void _refreshActiveMatchPresence(dynamic channel) {
+    final opponentId = _activeOpponentId;
+    if (opponentId == null || opponentId.isEmpty || gameOver) return;
+    try {
+      final online = _presenceContainsUser(
+        channel.presenceState(),
+        opponentId,
+      );
+      if (online) {
+        _cancelDisconnectGrace();
+      } else if (_matchReady) {
+        _startDisconnectGrace(opponentId);
+      }
+    } catch (error) {
+      debugPrint('Could not read active match presence: $error');
+    }
+  }
+  bool _presenceContainsUser(dynamic value, String expected) {
+    if (value is String) return value == expected;
+    if (value is Map) {
+      return value.entries.any(
+        (entry) =>
+            _presenceContainsUser(entry.key, expected) ||
+            _presenceContainsUser(entry.value, expected),
+      );
+    }
+    if (value is Iterable) {
+      return value.any((item) => _presenceContainsUser(item, expected));
+    }
+    return false;
+  }
+  void _startDisconnectGrace(String opponentId) {
+    if (_disconnectGraceTimer != null || gameOver) return;
+    _disconnectedOpponentId = opponentId;
+    _disconnectSecondsRemaining = _disconnectGraceSeconds;
+    messageText.text =
+        'OPPONENT CONNECTION LOST - RECONNECTING '
+        '$_disconnectSecondsRemaining';
+    async_tools.unawaited(
+      SupabaseMatchService()
+          .recordOpponentDisconnect(
+            matchId: matchId,
+            opponentId: opponentId,
+          )
+          .catchError((error) {
+        debugPrint('Could not record opponent disconnect: $error');
+      }),
+    );
+    _disconnectGraceTimer = async_tools.Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (gameOver) {
+        timer.cancel();
+        _disconnectGraceTimer = null;
+        return;
+      }
+      _disconnectSecondsRemaining--;
+      if (_disconnectSecondsRemaining <= 0) {
+        timer.cancel();
+        _disconnectGraceTimer = null;
+        _claimDisconnectedMatch();
+      } else {
+        messageText.text =
+            'OPPONENT CONNECTION LOST - RECONNECTING '
+            '$_disconnectSecondsRemaining';
+      }
+    });
+  }
+  void _cancelDisconnectGrace() {
+    final hadGrace = _disconnectGraceTimer != null ||
+        _disconnectedOpponentId != null;
+    _disconnectGraceTimer?.cancel();
+    _disconnectGraceTimer = null;
+    _disconnectedOpponentId = null;
+    if (!hadGrace) return;
+    if (!gameOver && _matchReady) {
+      final currentUserId = SupabaseMatchService().userId;
+      final mySymbol = currentUserId == playerXUID
+          ? 'X'
+          : (currentUserId == playerOUID ? 'O' : null);
+      messageText.text = currentPlayer == mySymbol
+          ? 'Your turn'
+          : "Opponent's turn";
+    }
+    async_tools.unawaited(
+      SupabaseMatchService().clearDisconnect(matchId: matchId).catchError((error) {
+        debugPrint('Could not clear disconnect grace: $error');
+      }),
+    );
+  }
+  Future<void> _claimDisconnectedMatch() async {
+    try {
+      await SupabaseMatchService().claimDisconnect(matchId: matchId);
+    } catch (error) {
+      debugPrint('Disconnect forfeit was not accepted: $error');
+      messageText.text = 'CONNECTION RESTORED - MATCH CONTINUES';
+    }
+  }
   void _applySupabaseMatch(Map<String, dynamic> data) {
     if (data.isEmpty) return;
     final boardData = data['board'];
@@ -771,7 +914,6 @@ class TicTacToeInviteScreen extends Component {
         }
       }
     }
-
     playerXUID = (data['player_x'] ?? '').toString();
     playerOUID = (data['player_o'] ?? '').toString();
     currentPlayer = (data['current_turn'] ?? 'X').toString();
@@ -782,6 +924,9 @@ class TicTacToeInviteScreen extends Component {
     final oScore = status == 'finished' && winnerId == playerOUID ? 1 : 0;
     _scoreValueText.text = '$xScore  -  $oScore';
     _matchReady = status == 'active' || gameOver;
+    if (_matchReady && _activeMatchPresenceChannel != null) {
+      _refreshActiveMatchPresence(_activeMatchPresenceChannel);
+    }
     if (_matchReady) {
       _loading?.removeFromParent();
       _loading = null;
@@ -798,7 +943,6 @@ class TicTacToeInviteScreen extends Component {
       _inviteCodeText?.removeFromParent();
       _inviteCodeText = null;
     }
-
     if (status == 'waiting') {
       messageText.text = 'Waiting for opponent...';
     } else if (gameOver) {
@@ -823,7 +967,6 @@ class TicTacToeInviteScreen extends Component {
           scoreXColor: ThemeStore.current.xColor,
           scoreOColor: ThemeStore.current.oColor,
         );
-
       }
     } else {
       messageText.text = currentPlayer == mySymbol
@@ -831,7 +974,6 @@ class TicTacToeInviteScreen extends Component {
           : 'Opponent\'s turn';
     }
   }
-
   void _showWinningLine() {
     if (boardSize != 3) return;
     if (_winningLine != null) return;
@@ -861,12 +1003,10 @@ class TicTacToeInviteScreen extends Component {
       }
     }
   }
-
   Vector2 _cellCenter(int index) => Vector2(
     layout.boardX + (index % boardSize + 0.5) * layout.cellWidth,
     layout.boardY + (index ~/ boardSize + 0.5) * layout.cellHeight,
   );
-
   Future<void> _recordOnlineScore({
     required String winnerId,
     required bool didDraw,
@@ -874,7 +1014,6 @@ class TicTacToeInviteScreen extends Component {
     if (_scoreRecorded) return;
     final userId = SupabaseMatchService().userId;
     if (userId == null) return;
-
     final result = didDraw ? 'draw' : (winnerId == userId ? 'win' : 'loss');
     final saved = await ScoreService().saveScore(
       Score(
@@ -896,7 +1035,6 @@ class TicTacToeInviteScreen extends Component {
       }
     }
   }
-
   Future<void> _recordTournamentResult(String winnerId) async {
     if (_tournamentResultRecorded || winnerId.isEmpty) return;
     final gameRef = findGame();
@@ -905,12 +1043,10 @@ class TicTacToeInviteScreen extends Component {
         gameRef.tournamentMatchData == null) {
       return;
     }
-
     final data = gameRef.tournamentMatchData!;
     final tournamentId = data['tournamentId']?.toString();
     final tournamentMatchId = data['tournamentMatchId']?.toString();
     if (tournamentId == null || tournamentMatchId == null) return;
-
     final saved = await TournamentService().completeMatch(
       tournamentId: tournamentId,
       matchId: tournamentMatchId,
@@ -921,18 +1057,15 @@ class TicTacToeInviteScreen extends Component {
       gameRef.activeTournamentId = tournamentId;
     }
   }
-
   void handleTap(int row, int col) async {
-    if (!_matchReady || gameOver || _moveInFlight || board[row * 3 + col] != '') {
+    if (!_matchReady || gameOver || _isPaused || _moveInFlight || board[row * 3 + col] != '') {
       return;
     }
-
     final service = SupabaseMatchService();
     if (service.userId == null) return;
     final gameRef = findGame();
     final symbol = gameRef is TicTacToeGame ? gameRef.myPlayerSymbol : null;
     if (symbol == null || currentPlayer != symbol) return;
-
     _moveInFlight = true;
     try {
       await service.submitMove(matchId: matchId, row: row, col: col);
@@ -942,16 +1075,13 @@ class TicTacToeInviteScreen extends Component {
       _moveInFlight = false;
     }
     return;
-
     // Ensure user is signed in and token propagated before attempting move
     // Determine local playerId (signed-in uid preferred, otherwise guest)
     final fb.User? firebaseUser = fb.FirebaseAuth.instance.currentUser;
     final playerId =
         firebaseUser?.uid ?? await GuestService.getOrCreateGuestId();
     if (currentPlayer != playerId) return; // only allow your turn
-
     final int cellIndex = row * 3 + col;
-
     try {
       final callable = functions.httpsCallable('makeMove');
       final result = await callable.call({
@@ -959,13 +1089,11 @@ class TicTacToeInviteScreen extends Component {
         'playerId': playerId,
         'cellIndex': cellIndex,
       });
-
       final data = result.data as Map<String, dynamic>;
       if (data['success'] == true) {
         final updatedBoard = List<String>.from(data['board']);
         board = updatedBoard;
         currentPlayer = data['currentTurn'] ?? currentPlayer;
-
         // Update cell visuals
         for (int i = 0; i < 9; i++) {
           final r = i ~/ boardSize;
@@ -981,10 +1109,163 @@ class TicTacToeInviteScreen extends Component {
     }
   }
 
+  void _pauseMatch() {
+    if (gameOver || _isPaused || _pausesRemaining <= 0) return;
+    _isPaused = true;
+    _pausesRemaining--;
+    _pauseSecondsRemaining = 15;
+    _sendMatchBroadcast(
+      event: 'tournament_pause',
+      payload: {'seconds': _pauseSecondsRemaining},
+    );
+    add(
+      _TournamentPauseOverlay(
+        theme: ThemeStore.current,
+        pausesRemaining: _pausesRemaining,
+        secondsRemaining: _pauseSecondsRemaining,
+        onContinue: _continueMatch,
+        onQuit: _quitTournamentMatch,
+      ),
+    );
+    _pauseTimer?.cancel();
+    _pauseTimer = async_tools.Timer.periodic(
+      const Duration(seconds: 1),
+      (timer) {
+        _pauseSecondsRemaining--;
+        for (final overlay in children.whereType<_TournamentPauseOverlay>()) {
+          overlay.setSecondsRemaining(_pauseSecondsRemaining);
+        }
+        if (_pauseSecondsRemaining <= 0) {
+          timer.cancel();
+          _pauseTimer = null;
+          _continueMatch();
+        }
+      },
+    );
+  }
+
+  void _continueMatch({bool broadcast = true}) {
+    _pauseTimer?.cancel();
+    _pauseTimer = null;
+    _isPaused = false;
+    for (final overlay in children.whereType<_TournamentPauseOverlay>()) {
+      overlay.removeFromParent();
+    }
+    if (broadcast) {
+      _sendMatchBroadcast(event: 'tournament_resume');
+    }
+  }
+
+  void _showOpponentPause(int seconds) {
+    if (gameOver || _isPaused) return;
+    _isPaused = true;
+    _pauseSecondsRemaining = seconds.clamp(1, 15);
+    add(
+      _TournamentPauseOverlay(
+        theme: ThemeStore.current,
+        pausesRemaining: 0,
+        secondsRemaining: _pauseSecondsRemaining,
+        title: 'MATCH ON HOLD',
+        detail: 'THE OTHER PLAYER REQUESTED A\nSHORT BREAK',
+        showContinue: false,
+        onContinue: () {},
+        onQuit: _quitTournamentMatch,
+      ),
+    );
+    _pauseTimer?.cancel();
+    _pauseTimer = async_tools.Timer.periodic(
+      const Duration(seconds: 1),
+      (timer) {
+        _pauseSecondsRemaining--;
+        for (final overlay in children.whereType<_TournamentPauseOverlay>()) {
+          overlay.setSecondsRemaining(_pauseSecondsRemaining);
+        }
+        if (_pauseSecondsRemaining <= 0) {
+          timer.cancel();
+          _pauseTimer = null;
+          _continueMatch(broadcast: false);
+        }
+      },
+    );
+  }
+
+  void _sendMatchBroadcast({
+    required String event,
+    Map<String, dynamic>? payload,
+  }) {
+    final channel = _activeMatchPresenceChannel;
+    if (channel == null) return;
+    try {
+      channel.send(
+        type: 'broadcast',
+        event: event,
+        payload: payload ?? <String, dynamic>{},
+      );
+    } catch (error) {
+      debugPrint('Could not broadcast tournament pause state: $error');
+    }
+  }
+
+  void _updateRoundTimer() {
+    final game = findGame();
+    if (_roundTimerText == null || game is! TicTacToeGame) return;
+    final rawDeadline = game.tournamentMatchData?['deadline']?.toString();
+    final deadline = rawDeadline == null ? null : DateTime.tryParse(rawDeadline);
+    if (deadline == null) return;
+    final remaining = deadline.difference(DateTime.now());
+    if (remaining.isNegative || remaining == Duration.zero) {
+      _roundTimerText!.text = 'ROUND DEADLINE REACHED';
+      return;
+    }
+    final hours = remaining.inHours;
+    final minutes = remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+    _roundTimerText!.text = 'ROUND TIME REMAINING: ${hours}h $minutes:$seconds';
+  }
+
+  @override
+  void update(double dt) {
+    _updateRoundTimer();
+    super.update(dt);
+  }
+
+  Future<void> _quitTournamentMatch() async {
+    if (gameOver) return;
+    final gameRef = findGame();
+    if (gameRef is! TicTacToeGame ||
+        gameRef.pendingMatchIsTournament != true ||
+        gameRef.tournamentMatchData == null) {
+      return;
+    }
+
+    final data = gameRef.tournamentMatchData!;
+    final tournamentId = data['tournamentId']?.toString();
+    final tournamentMatchId = data['tournamentMatchId']?.toString();
+    final opponentId = _activeOpponentId ?? data['opponent']?.toString();
+    if (tournamentId == null ||
+        tournamentMatchId == null ||
+        opponentId == null ||
+        opponentId.isEmpty) {
+      return;
+    }
+
+    messageText.text = 'FORFEITING MATCH...';
+    final forfeited = await TournamentService().completeMatch(
+      tournamentId: tournamentId,
+      matchId: tournamentMatchId,
+      winnerUid: opponentId,
+    );
+    if (!forfeited) {
+      messageText.text = 'COULD NOT FORFEIT MATCH - TRY AGAIN';
+      return;
+    }
+
+    gameRef.activeTournamentId = tournamentId;
+    gameRef.router.pushReplacementNamed('tournament_detail');
+  }
   void leaveMatch() async {
     matchSubscription?.cancel();
     supabaseMatchSubscription?.cancel();
-
     // Leave tournament queue if necessary
     try {
       final svc = CompetitionService();
@@ -1007,7 +1288,6 @@ class TicTacToeInviteScreen extends Component {
     } catch (e) {
       debugPrint('Error leaving tournament queue: $e');
     }
-
     final flameGame = findGame();
     if (flameGame != null) {
       for (final component in List<Component>.from(flameGame.children)) {
@@ -1017,7 +1297,6 @@ class TicTacToeInviteScreen extends Component {
     final router = (flameGame as dynamic).router;
     router?.pushNamed('menu');
   }
-
   // Robustly add the end-match overlay with retries so it is not lost
   // during route transitions. Attaches to the provided flameGame root.
   Future<void> _addEndMatchOverlaySafely(
@@ -1035,21 +1314,17 @@ class TicTacToeInviteScreen extends Component {
     int delayMs = 80;
     RectangleComponent? dim;
     EndMatchOverlay? overlay;
-
     while (attempts < 5) {
       try {
         // If overlay present already, nothing to do
         if (flameGame.children.whereType<EndMatchOverlay>().isNotEmpty) return;
-
         // Create dim if needed
         dim ??= RectangleComponent(
           size: flameGame.size ?? BoardLayout.defaultScreenSize,
           paint: Paint()..color = Colors.black.withValues(alpha: 0.6),
           priority: 1000000000000,
         );
-
         if (!flameGame.children.contains(dim)) flameGame.add(dim);
-
         overlay ??= EndMatchOverlay(
           theme: ThemeStore.current,
           didWin: didWin,
@@ -1090,7 +1365,6 @@ class TicTacToeInviteScreen extends Component {
               router?.pushNamed('menu');
               return;
             }
-
             // Guest user: check which side we are on
             String? mySym;
             try {
@@ -1098,7 +1372,6 @@ class TicTacToeInviteScreen extends Component {
             } catch (_) {
               mySym = null;
             }
-
             // If we are the joiner (typically 'O'), just route home without prompting
             if (mySym != null && mySym == 'O') {
               try {
@@ -1108,7 +1381,6 @@ class TicTacToeInviteScreen extends Component {
               router?.pushNamed('menu');
               return;
             }
-
             // Use online match counter to decide prompt frequency (1,11,21...).
             try {
               final prefs = await SharedPreferences.getInstance();
@@ -1128,7 +1400,6 @@ class TicTacToeInviteScreen extends Component {
             } catch (e) {
               debugPrint('Sign-in prompt decision failed: $e');
             }
-
             // Default: just route home
             try {
               dim?.removeFromParent();
@@ -1143,7 +1414,6 @@ class TicTacToeInviteScreen extends Component {
         );
         overlay.priority = 1000000000001;
         if (!flameGame.children.contains(overlay)) flameGame.add(overlay);
-
         // Increment online match counter to control sign-in prompt frequency.
         Future.microtask(() async {
           try {
@@ -1155,7 +1425,6 @@ class TicTacToeInviteScreen extends Component {
             debugPrint('Failed to update online match counter: $e');
           }
         });
-
         // Refresh leaderboard (best-effort) so UI can update after server-side scoring
         try {
           final funcs = FirebaseFunctions.instanceFor(region: 'us-central1');
@@ -1165,7 +1434,6 @@ class TicTacToeInviteScreen extends Component {
               .then((_) {})
               .catchError((_) {});
         } catch (_) {}
-
         // Verify overlay remains attached briefly and re-add if missing.
         try {
           // Run a short async verification loop to ensure the overlay stays
@@ -1194,17 +1462,14 @@ class TicTacToeInviteScreen extends Component {
             }
           });
         } catch (_) {}
-
         return;
       } catch (_) {
         // ignore and retry
       }
-
       await Future.delayed(Duration(milliseconds: delayMs));
       attempts++;
       delayMs *= 2;
     }
-
     // Final best-effort attempt
     try {
       if (flameGame.children.whereType<EndMatchOverlay>().isNotEmpty) return;
@@ -1252,7 +1517,6 @@ class TicTacToeInviteScreen extends Component {
       flameGame.add(finalOverlay);
     } catch (_) {}
   }
-
   // Smoke-test helper: attempt to add and then remove an end-match overlay.
   // Returns true if the overlay could be added.
   Future<bool> smokeTestEndMatchOverlay() async {
@@ -1290,13 +1554,10 @@ class TicTacToeInviteScreen extends Component {
       return false;
     }
   }
-
   void _startConfetti() {
     if (confettiRunning) return;
     confettiRunning = true;
-
     final size = findGame()?.size ?? Vector2(layout.screenSize.x, layout.screenSize.y);
-
     void spawnConfettiPiece() {
       if (!confettiRunning) return;
       final double confettiSize = 4 + random.nextDouble() * 6;
@@ -1313,10 +1574,8 @@ class TicTacToeInviteScreen extends Component {
         position: Vector2(random.nextDouble() * size.x, -10),
         anchor: Anchor.center,
       );
-
       confettiPieces.add(confetti);
       add(confetti);
-
       final fallDuration = 1.5 + random.nextDouble() * 1.5;
       confetti.add(
         MoveEffect.to(
@@ -1328,33 +1587,50 @@ class TicTacToeInviteScreen extends Component {
           },
         ),
       );
-
       confetti.add(
         RotateEffect.by(
           random.nextDouble() * pi * 4,
           EffectController(duration: fallDuration, curve: Curves.linear),
         ),
       );
-
       Future.delayed(const Duration(milliseconds: 15), spawnConfettiPiece);
     }
-
     spawnConfettiPiece();
     Future.delayed(
       const Duration(milliseconds: 2500),
       () => confettiRunning = false,
     );
   }
-}
 
+  /// Hides the instant "match connection" fallback overlay once this screen's
+  /// Flame content is ready so we never leave a stale loading panel covering
+  /// the live match board. The short delay lets Flame finish mounting the route
+  /// so there is no blank frame between overlay and board.
+  void _removeMatchLoadingFallback() {
+    Future<void>.delayed(const Duration(milliseconds: 120), () {
+      try {
+        final game = findGame();
+        if (game is TicTacToeGame) {
+          game.overlays.remove('match_loading_fallback');
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void onRemove() {
+    _removeMatchLoadingFallback();
+    _pauseTimer?.cancel();
+    _disconnectGraceTimer?.cancel();
+    super.onRemove();
+  }
+}
 class _WinningLine extends PositionComponent {
   final Vector2 start;
   final Vector2 end;
   final Color color;
-
   _WinningLine({required this.start, required this.end, required this.color})
     : super(priority: 5);
-
   @override
   void render(Canvas canvas) {
     final paint = Paint()
@@ -1369,11 +1645,9 @@ class _MatchLoadingModal extends PositionComponent {
   final Vector2 screenSize;
   final GameTheme theme;
   final String? inviteCode;
-
   _MatchLoadingModal({required Vector2 size, required this.theme, this.inviteCode})
     : screenSize = size,
       super(size: size, position: Vector2.zero(), priority: 100);
-
   @override
   Future<void> onLoad() async {
     await super.onLoad();
@@ -1383,7 +1657,6 @@ class _MatchLoadingModal extends PositionComponent {
         paint: Paint()..color = const Color.fromARGB(165, 0, 0, 0),
       ),
     );
-
     final panelSize = Vector2(
       screenSize.x * 0.78,
       (screenSize.y * 0.32).clamp(190.0, 240.0),
@@ -1426,20 +1699,103 @@ class _MatchLoadingModal extends PositionComponent {
     );
   }
 }
+class _TournamentPauseOverlay extends PositionComponent {
+  final GameTheme theme;
+  final int pausesRemaining;
+  final int secondsRemaining;
+  final String title;
+  final String detail;
+  final bool showContinue;
+  final VoidCallback onContinue;
+  final VoidCallback onQuit;
+
+  _TournamentPauseOverlay({
+    required this.theme,
+    required this.pausesRemaining,
+    required this.secondsRemaining,
+    this.title = 'MATCH PAUSED',
+    this.detail = '',
+    this.showContinue = true,
+    required this.onContinue,
+    required this.onQuit,
+  }) : super(
+          size: Vector2(320, 210),
+          anchor: Anchor.center,
+          priority: 100000,
+        );
+
+  TextComponent? _countdown;
+
+  @override
+  Future<void> onLoad() async {
+    final game = findGame();
+    if (game != null) position = game.size / 2;
+    add(OrnateOverlayPanel(size: size, theme: theme));
+    add(TextComponent(
+      text: title,
+      position: Vector2(size.x / 2, 28),
+      anchor: Anchor.topCenter,
+      textRenderer: TextPaint(
+        style: TextStyle(
+          color: theme.contrastColor,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ));
+    if (detail.isNotEmpty) {
+      add(TextComponent(
+        text: detail,
+        position: Vector2(size.x / 2, 58),
+        anchor: Anchor.topCenter,
+        textRenderer: TextPaint(
+          style: TextStyle(color: theme.contrastColor, fontSize: 11),
+        ),
+      ));
+    }
+    _countdown = TextComponent(
+      text: 'AUTO-CONTINUES IN ${secondsRemaining}s${showContinue ? '\nPAUSES LEFT: $pausesRemaining' : ''}',
+      position: Vector2(size.x / 2, detail.isEmpty ? 64 : 92),
+      anchor: Anchor.topCenter,
+      textRenderer: TextPaint(
+        style: TextStyle(color: theme.contrastColor, fontSize: 13),
+      ),
+    );
+    add(_countdown!);
+    if (showContinue) {
+      add(ButtonComponent(
+        label: 'CONTINUE',
+        position: Vector2(size.x / 2 - 78, size.y - 48),
+        size: Vector2(120, 38),
+        theme: theme,
+        onPressed: onContinue,
+      ));
+    }
+    add(ButtonComponent(
+      label: 'QUIT MATCH',
+      position: Vector2(showContinue ? size.x / 2 + 78 : size.x / 2, size.y - 48),
+      size: Vector2(120, 38),
+      theme: theme,
+      onPressed: onQuit,
+    ));
+  }
+
+  void setSecondsRemaining(int seconds) {
+    _countdown?.text =
+        'AUTO-CONTINUES IN ${seconds < 0 ? 0 : seconds}s${showContinue ? '\nPAUSES LEFT: $pausesRemaining' : ''}';
+  }
+}
 
 class _LoadingDots extends PositionComponent {
   final Color color;
   double _elapsed = 0;
-
   _LoadingDots({required Vector2 position, required this.color})
     : super(position: position, size: Vector2(64, 16), anchor: Anchor.center);
-
   @override
   void update(double dt) {
     _elapsed += dt;
     super.update(dt);
   }
-
   @override
   void render(Canvas canvas) {
     for (var index = 0; index < 3; index++) {
@@ -1449,23 +1805,19 @@ class _LoadingDots extends PositionComponent {
     }
   }
 }
-
 class _InviteBoardGrid extends PositionComponent {
   final BoardLayout layout;
   final GameTheme theme;
-
   _InviteBoardGrid({required this.layout, required this.theme})
     : super(
         position: Vector2(layout.boardX, layout.boardY),
         size: Vector2(layout.cellWidth * 3, layout.cellHeight * 3),
         priority: 0,
       );
-
   @override
   void render(Canvas canvas) {
     final fill = Paint()..color = theme.boardBackground.withValues(alpha: 0.72);
     canvas.drawRect(size.toRect(), fill);
-
     final line = Paint()
       ..color = theme.gridColor
       ..strokeWidth = 3
@@ -1479,14 +1831,12 @@ class _InviteBoardGrid extends PositionComponent {
     super.render(canvas);
   }
 }
-
 // CELL COMPONENT
 class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
   final int row;
   final int col;
   SpriteComponent? markSprite;
   final TicTacToeInviteScreen parentBoard;
-
   TicTacToeCellInvite({
     required this.row,
     required this.col,
@@ -1494,13 +1844,11 @@ class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
     required Vector2 size,
     required this.parentBoard,
   }) : super(position: position, size: size);
-
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('tap.wav');
     parentBoard.handleTap(row, col);
   }
-
   void mark(String symbol) async {
     // symbol may be 'X'/'O' or a player UID; map UIDs to X/O using parentBoard stored ids
     String sym = symbol;
@@ -1515,7 +1863,6 @@ class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
         return;
       }
     }
-
     markSprite?.removeFromParent();
     final markSize = Vector2.all(min(size.x, size.y) * 0.75);
     final themedSprite = await ThemeStore.current.symbolSprite(
@@ -1530,31 +1877,26 @@ class TicTacToeCellInvite extends PositionComponent with TapCallbacks {
     add(markSprite!);
   }
 }
-
 // BUTTON COMPONENT
 class _PressdownButton extends SpriteComponent with TapCallbacks {
   final VoidCallback onPressed;
   final String imagePath;
-
   _PressdownButton({
     required this.imagePath,
     required Vector2 position,
     required Vector2 size,
     required this.onPressed,
   }) : super(size: size, position: position, anchor: Anchor.center);
-
   @override
   Future<void> onLoad() async {
     sprite = await Sprite.load(imagePath);
   }
-
   @override
   void onTapDown(TapDownEvent event) {
     if (SettingsScreen.buttonSoundOn) FlameAudio.play('button.wav');
     _bounceEffect();
     Future.delayed(const Duration(milliseconds: 180), onPressed);
   }
-
   void _bounceEffect() {
     add(
       SequenceEffect([
@@ -1571,7 +1913,6 @@ class _PressdownButton extends SpriteComponent with TapCallbacks {
     );
   }
 }
-
 // UTILITY: Current Week ID
 String getCurrentWeekId() {
   final now = DateTime.now();

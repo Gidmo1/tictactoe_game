@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async' as async;
 
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
@@ -26,7 +26,7 @@ void _startProviderSignIn(
   TicTacToeGame game,
   Future<dynamic> Function() action,
 ) {
-  StreamSubscription<AuthState>? subscription;
+  async.StreamSubscription<AuthState>? subscription;
   subscription = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
     if (state.event != AuthChangeEvent.signedIn) return;
     game.pendingAuthOnSignedIn?.call();
@@ -56,6 +56,108 @@ void main() async {
   ]);
   await ThemeStore.init();
   runApp(const MyApp());
+}
+
+/// A quick Flutter-drawn "match connection" loading panel that appears the
+/// instant the user enters the online tournament match flow (before the Flame
+/// screen has finished loading sprites / talking to the backend). It cycles
+/// friendly status messages so users never stare at a blank/black screen, and
+/// is removed by the match screen itself once its content is ready.
+class _MatchConnectionFallback extends StatefulWidget {
+  final Color backgroundColor;
+  final Color panelColor;
+  final Color contrastColor;
+  final Color accentColor;
+
+  const _MatchConnectionFallback({
+    required this.backgroundColor,
+    required this.panelColor,
+    required this.contrastColor,
+    required this.accentColor,
+  });
+
+  @override
+  State<_MatchConnectionFallback> createState() =>
+      _MatchConnectionFallbackState();
+}
+
+class _MatchConnectionFallbackState extends State<_MatchConnectionFallback> {
+  static const _statusMessages = [
+    'CONNECTING TO PLAYER...',
+    'BUILDING SPRITES AND BUTTONS...',
+    'SYNCING MATCH BOARD...',
+    'WAITING FOR OPPONENT...',
+    'ALMOST THERE...',
+  ];
+
+  int _messageIndex = 0;
+  async.Timer? _messageTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _messageTimer = async.Timer.periodic(const Duration(milliseconds: 900), (_) {
+      if (!mounted) return;
+      setState(() {
+        _messageIndex = (_messageIndex + 1) % _statusMessages.length;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _messageTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: widget.backgroundColor,
+      child: Center(
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+          decoration: BoxDecoration(
+            color: widget.panelColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: widget.accentColor.withValues(alpha: 0.6),
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'MATCH CONNECTION',
+                style: TextStyle(
+                  color: widget.contrastColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 22),
+              const SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                _statusMessages[_messageIndex],
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: widget.contrastColor,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class DeepLinkHandler extends StatefulWidget {
@@ -580,6 +682,19 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
             ),
           );
         },
+        // Match connection fallback: shown instantly when entering the online
+        // tournament match flow (tournament_match_play or a tournament invite)
+        // so users never see a black screen while Flame + network requests are
+        // loading. The match screen removes it once its content is ready.
+        'match_loading_fallback': (context, game) {
+          final theme = ThemeStore.current;
+          return _MatchConnectionFallback(
+            backgroundColor: theme.boardBackground,
+            panelColor: theme.buttonBase,
+            contrastColor: theme.contrastColor,
+            accentColor: theme.gridColor,
+          );
+        },
         // Edit profile / avatar claim overlay: invoked after first completed game
         'edit_profile': (context, game) {
           final g = game as TicTacToeGame;
@@ -709,7 +824,7 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler>
                                 } catch (_) {}
                               });
 
-                          StreamSubscription<AuthState>? sub;
+                          async.StreamSubscription<AuthState>? sub;
                           sub = Supabase.instance.client.auth.onAuthStateChange.listen(
                             (state) {
                               if (state.event == AuthChangeEvent.signedIn) {
