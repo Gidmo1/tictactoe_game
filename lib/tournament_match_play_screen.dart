@@ -1,6 +1,3 @@
-import 'dart:async' as async;
-import 'dart:math';
-
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:tictactoe_game/tictactoe.dart';
@@ -9,9 +6,7 @@ import 'package:tictactoe_game/service/tournament_service.dart';
 import 'package:tictactoe_game/service/bracket_service.dart';
 import 'package:tictactoe_game/service/supabase_match_service.dart';
 import 'package:tictactoe_game/game_themes/theme_store.dart';
-import 'package:tictactoe_game/game_themes/theme.dart';
 import 'package:tictactoe_game/components/button.dart';
-import 'package:tictactoe_game/components/ornate_overlay_panel.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacToeGame> {
@@ -25,41 +20,113 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
   bool isLoading = true;
   String? errorMessage;
   bool _opponentOnline = false;
-  bool _connectionInProgress = false;
-  bool _matchCreationStarted = false;
-  async.Timer? _matchLookupTimer;
   bool _presenceConnected = false;
   bool _walkoverAvailable = false;
   dynamic _presenceChannel;
   TextComponent? _presenceStatus;
+  TextComponent? _loadingText;
+
+  TournamentMatchPlayScreen() {
+    debugPrint('[TOURNAMENT PLAY SCREEN] Constructor called!');
+  }
+
+  @override
+  void render(Canvas canvas) {
+    debugPrint('[TOURNAMENT PLAY SCREEN] render() called - component IS mounted!');
+    super.render(canvas);
+  }
+
+  @override
+  void onMount() {
+    debugPrint('[TOURNAMENT PLAY SCREEN] onMount() called!');
+    super.onMount();
+  }
 
   @override
   Future<void> onLoad() async {
-    final gameRef = findGame()!;
-    final canvasSize = gameRef.size;
-    tournamentService = TournamentService();
-    tournamentId = (gameRef as dynamic).activeTournamentId ?? '';
-    userUid = Supabase.instance.client.auth.currentUser?.id ?? '';
+    try {
+      debugPrint('[TOURNAMENT PLAY SCREEN] onLoad() starting!');
+      await super.onLoad();
+      debugPrint('[TOURNAMENT PLAY SCREEN] super.onLoad() completed!');
+      
+      final gameRef = findGame()!;
+      debugPrint('[TOURNAMENT PLAY SCREEN] Got gameRef: $gameRef');
+      
+      final canvasSize = gameRef.size;
+      debugPrint('[TOURNAMENT PLAY SCREEN] Got canvasSize: $canvasSize');
+      
+      tournamentService = TournamentService();
+      debugPrint('[TOURNAMENT PLAY SCREEN] Created tournamentService');
+      
+      tournamentId = (gameRef as dynamic).activeTournamentId ?? '';
+      debugPrint('[TOURNAMENT PLAY SCREEN] Got tournamentId: $tournamentId');
+      
+      userUid = Supabase.instance.client.auth.currentUser?.id ?? '';
+      debugPrint('[TOURNAMENT PLAY SCREEN] Got userUid: $userUid');
 
-    // Background
-    add(
-      RectangleComponent(
-        size: canvasSize,
-        paint: Paint()..color = ThemeStore.current.boardBackground,
-        priority: -1,
-      ),
-    );
-    _renderLoading(canvasSize);
+      if (tournamentId.isEmpty) {
+        throw Exception('activeTournamentId is empty! Cannot proceed');
+      }
 
-    // Load tournament and match
-    await _loadTournamentAndMatch();
+      add(
+        RectangleComponent(
+          size: canvasSize,
+          paint: Paint()..color = ThemeStore.current.boardBackground,
+          priority: -1,
+        ),
+      );
+
+      _renderLoading(canvasSize);
+      debugPrint('[TOURNAMENT PLAY SCREEN] Rendered loading screen');
+
+      await _loadTournamentAndMatch();
+      debugPrint('[TOURNAMENT PLAY SCREEN] onLoad() completed!');
+      
+      // Remove the loading overlay once the screen is ready
+      _removeMatchLoadingFallback();
+    } catch (e, stackTrace) {
+      debugPrint('[TOURNAMENT PLAY SCREEN] FATAL ERROR in onLoad: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      
+      final gameRef = findGame();
+      if (gameRef != null) {
+        add(
+          TextComponent(
+            text: 'ERROR: $e',
+            position: Vector2(gameRef.size.x / 2, gameRef.size.y / 2),
+            anchor: Anchor.center,
+            textRenderer: TextPaint(
+              style: const TextStyle(
+                color: Color(0xFFFF6B6B),
+                fontSize: 14,
+              ),
+            ),
+          ),
+        );
+      }
+      rethrow;
+    }
+  }
+
+  void _removeMatchLoadingFallback() {
+    Future<void>.delayed(const Duration(milliseconds: 120), () {
+      try {
+        final game = findGame();
+        if (game is TicTacToeGame) {
+          debugPrint('[TOURNAMENT PLAY SCREEN] Removing match_loading_fallback overlay');
+          game.overlays.remove('match_loading_fallback');
+        }
+      } catch (e) {
+        debugPrint('[TOURNAMENT PLAY SCREEN] Could not remove overlay: $e');
+      }
+    });
   }
 
   Future<void> _loadTournamentAndMatch() async {
     try {
-      tournament = await tournamentService
-          .getTournament(tournamentId)
-          .timeout(const Duration(seconds: 15));
+      debugPrint('[TOURNAMENT PLAY SCREEN] Loading tournament and match...');
+      tournament = await tournamentService.getTournament(tournamentId);
+      debugPrint('[TOURNAMENT PLAY SCREEN] Tournament loaded: $tournament');
       
       if (tournament == null) {
         errorMessage = 'Tournament not found';
@@ -68,11 +135,12 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
         return;
       }
 
-      // Get next match for this player
       currentMatch = BracketService.getNextMatchForParticipant(
         tournament!.bracket,
         userUid,
       );
+
+      debugPrint('[TOURNAMENT PLAY SCREEN] Current match: $currentMatch');
 
       if (currentMatch == null) {
         errorMessage = 'No pending matches for you';
@@ -81,21 +149,21 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
         return;
       }
 
-      // Determine opponent
       final opponentValue = currentMatch!['player1'] == userUid
           ? currentMatch!['player2']
           : currentMatch!['player1'];
+
       opponent = opponentValue?.toString();
+      debugPrint('[TOURNAMENT PLAY SCREEN] Opponent loaded: $opponent');
 
       isLoading = false;
       _renderSafely();
       _connectToMatchPresence();
+
     } catch (e) {
-      errorMessage = e is async.TimeoutException
-          ? 'CONNECTION TIMED OUT - CHECK YOUR NETWORK AND TRY AGAIN'
-          : 'Error loading tournament: $e';
+      debugPrint('[TOURNAMENT PLAY SCREEN] ERROR: $e');
+      errorMessage = 'Error loading tournament: $e';
       isLoading = false;
-      debugPrint('Error: $e');
       _renderSafely();
     }
   }
@@ -141,23 +209,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
     }
   }
 
-  /// Hides the instant "match connection" fallback overlay once this screen's
-  /// own Flame content is ready to be drawn, so we never leave a stale loading
-  /// panel covering the live match lobby. The short delay lets Flame finish
-  /// mounting the route so there is no blank frame between overlay and board.
-  void _removeRouteFallback() {
-    Future<void>.delayed(const Duration(milliseconds: 120), () {
-      try {
-        final gameRef = findGame();
-        if (gameRef is TicTacToeGame) {
-          gameRef.overlays.remove('match_loading_fallback');
-        }
-      } catch (_) {}
-    });
-  }
-
   void _renderContent() {
-    _removeRouteFallback();
     final gameRef = findGame()!;
     final canvasSize = gameRef.size;
 
@@ -187,6 +239,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
           },
         ),
       );
+
       return;
     }
 
@@ -204,10 +257,10 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
           ),
         ),
       );
+
       return;
     }
 
-    // Tournament name
     add(
       TextComponent(
         text: (tournament?.name ?? 'Tournament').toUpperCase(),
@@ -223,7 +276,6 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       ),
     );
 
-    // Match info
     final position =
         (currentMatch!['position'] as num?)?.toInt() ?? 0;
     add(
@@ -240,12 +292,12 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       ),
     );
 
-    // Opponent display
     final opponentLabel = opponent == null
         ? 'OPPONENT'
         : opponent!.length > 8
             ? opponent!.substring(0, 8).toUpperCase()
             : opponent!.toUpperCase();
+
     add(
       TextComponent(
         text: 'VS $opponentLabel',
@@ -275,7 +327,8 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
     );
     add(_presenceStatus!);
 
-    // Play button
+    // Either player can start — presence is advisory only.
+    debugPrint('[TOURNAMENT PLAY SCREEN] Adding PLAY MATCH button. Opponent=$opponent, CurrentMatch=$currentMatch');
     add(
       ButtonComponent(
         label: 'PLAY MATCH',
@@ -283,12 +336,57 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
         size: Vector2(150, 50),
         theme: ThemeStore.current,
         onPressed: () async {
-          await _beginConnection();
+          debugPrint('[TOURNAMENT PLAY] PLAY MATCH button pressed!');
+          if (opponent == null || opponent!.isEmpty) {
+            debugPrint('[TOURNAMENT PLAY] Opponent is null or empty');
+            _presenceStatus?.text = 'NO OPPONENT ASSIGNED YET';
+            return;
+          }
+
+          try {
+            _presenceStatus?.text = 'STARTING ONLINE MATCH...';
+            debugPrint('[TOURNAMENT PLAY] User $userUid starting match against $opponent');
+            final boardSize = _gridSizeValue(tournament!.gridSize);
+            final winLength = boardSize.clamp(3, boardSize);
+
+            debugPrint('[TOURNAMENT PLAY] Calling startOrJoinTournamentMatch...');
+            final match = await SupabaseMatchService().startOrJoinTournamentMatch(
+              tournamentId: tournamentId,
+              tournamentMatchId: currentMatch!['id'].toString(),
+              boardSize: boardSize,
+              winLength: winLength,
+              opponentId: opponent!,
+            );
+
+            debugPrint('[TOURNAMENT PLAY] Got match: ${match['id']}');
+            final onlineMatchId = match['id']?.toString();
+            if (onlineMatchId == null || onlineMatchId.isEmpty) {
+              throw StateError('Online match was not created');
+            }
+
+            try {
+              await _presenceChannel?.send(
+                type: 'broadcast',
+                event: 'match_ready',
+                payload: {'matchId': onlineMatchId},
+              );
+            } catch (_) {}
+
+            final mySymbol = (match['player_x']?.toString() == userUid)
+                ? 'X'
+                : 'O';
+
+            debugPrint('[TOURNAMENT PLAY] Opening match $onlineMatchId as $mySymbol');
+            _openOnlineMatch(onlineMatchId, mySymbol);
+
+          } catch (e) {
+            debugPrint('Could not start tournament match: $e');
+            _presenceStatus?.text = 'COULD NOT START MATCH - TRY AGAIN';
+          }
         },
       ),
     );
 
-    // Back button
     add(
       ButtonComponent(
         label: 'BACK',
@@ -300,133 +398,6 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
         },
       ),
     );
-  }
-
-  Future<void> _beginConnection() async {
-    if (_connectionInProgress || currentMatch == null) return;
-    _connectionInProgress = true;
-    _presenceStatus?.text = 'CONNECTING TO PLAYER...';
-    _showConnectionLobby('CONNECTING TO PLAYER...');
-    try {
-      if (_presenceChannel == null) {
-        throw StateError('Match lobby is not connected');
-      }
-      _setConnectionMessage('BUILDING MATCH BOARD...');
-      if (userUid == currentMatch!['player1']) {
-        await _createAndOpenMatch();
-      } else {
-        _setConnectionMessage('READY. WAITING FOR PLAYER 1 TO BUILD THE MATCH...');
-        _watchForCreatedMatch();
-      }
-    } catch (error) {
-      debugPrint('Tournament connection lobby failed: $error');
-      _showConnectionFailure('Connection failed. Please try again.');
-    }
-  }
-
-  Future<void> _createAndOpenMatch() async {
-    if (_matchCreationStarted) return;
-    _matchCreationStarted = true;
-    try {
-      _setConnectionMessage('CREATING ONLINE MATCH...');
-      final created = await SupabaseMatchService().createMatch(
-        boardSize: _gridSizeValue(tournament!.gridSize),
-        winLength: 3,
-        opponentId: opponent,
-        inviteCode: currentMatch!['id']?.toString(),
-      );
-      final onlineMatchId = created['id']?.toString();
-      if (onlineMatchId == null || onlineMatchId.isEmpty) {
-        throw StateError('Online match was not created');
-      }
-      final verified = await SupabaseMatchService().getMatch(onlineMatchId);
-      if (verified == null) throw StateError('Created match could not be verified');
-      await _presenceChannel.send(
-        type: 'broadcast',
-        event: 'match_ready',
-        payload: {'matchId': onlineMatchId},
-      );
-      _setConnectionMessage('MATCH CONNECTED. OPENING BOARD...');
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-      _openOnlineMatch(onlineMatchId, 'X');
-    } catch (error) {
-      _matchCreationStarted = false;
-      debugPrint('Could not create tournament match: $error');
-      _showConnectionFailure('Connection failed while building the match.');
-    }
-  }
-
-  void _watchForCreatedMatch() {
-    _matchLookupTimer?.cancel();
-    _matchLookupTimer = async.Timer.periodic(
-      const Duration(seconds: 2),
-      (_) async {
-        try {
-          final match = await SupabaseMatchService().getMatchByInviteCode(
-            currentMatch!['id'].toString(),
-          );
-          final onlineMatchId = match?['id']?.toString();
-          if (onlineMatchId == null || onlineMatchId.isEmpty) return;
-          _matchLookupTimer?.cancel();
-          _matchLookupTimer = null;
-          _setConnectionMessage('MATCH CONNECTED. OPENING BOARD...');
-          _openOnlineMatch(onlineMatchId, 'O');
-        } catch (error) {
-          debugPrint('Tournament match lookup failed: $error');
-        }
-      },
-    );
-  }
-
-  void _showConnectionLobby(String message) {
-    _connectionOverlay?.removeFromParent();
-    _connectionOverlay = _ConnectionLobbyOverlay(
-      theme: ThemeStore.current,
-      message: message,
-      onRetry: _retryConnection,
-      onCancel: () {
-        _connectionInProgress = false;
-        _connectionOverlay?.removeFromParent();
-      },
-    );
-    add(_connectionOverlay!);
-  }
-
-  void _setConnectionMessage(String message) {
-    _connectionOverlay?.setMessage(message);
-    _presenceStatus?.text = message;
-  }
-
-  void _showConnectionFailure(String message) {
-    _connectionInProgress = false;
-    _showConnectionLobby(message);
-    _connectionOverlay?.showFailure();
-    _presenceStatus?.text = message;
-  }
-
-  Future<void> _retryConnection() async {
-    _connectionOverlay?.removeFromParent();
-    _connectionOverlay = null;
-    _opponentOnline = false;
-    if (!_presenceConnected) {
-      // The lobby never connected in the first place - tear down the old
-      // channel and try to establish presence again so RETRY can succeed.
-      final oldChannel = _presenceChannel;
-      if (oldChannel != null) {
-        try {
-          Supabase.instance.client.removeChannel(oldChannel);
-        } catch (_) {}
-        _presenceChannel = null;
-      }
-      _presenceStatus?.text = 'RECONNECTING TO PLAYER...';
-      _showConnectionLobby('RECONNECTING TO PLAYER...');
-      await _connectToMatchPresence();
-      if (!_presenceConnected) {
-        _showConnectionFailure('Still unable to connect to the match lobby.');
-        return;
-      }
-    }
-    await _beginConnection();
   }
 
   int _gridSizeValue(GridSize size) {
@@ -453,7 +424,6 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       'player1': currentMatch!['player1'],
       'player2': currentMatch!['player2'],
       'gridSize': tournament!.gridSize,
-      'deadline': currentMatch!['deadline'],
     };
     gameRef.router.pushReplacementNamed('invite');
   }
@@ -465,31 +435,85 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       final channel = Supabase.instance.client.channel(
         'tournament_match_${tournamentId}_${currentMatch!['id']}',
       ) as dynamic;
+
       _presenceChannel = channel;
+
       channel.onPresenceSync((dynamic _) {
         _presenceConnected = true;
         _updatePresenceStatus();
         _refreshOpponentPresence(channel);
       });
+
       channel.onPresenceJoin((dynamic _) {
-        _opponentOnline = true;
-        _updatePresenceStatus();
+        _refreshOpponentPresence(channel);
       });
+
       channel.onPresenceLeave((dynamic _) {
         _refreshOpponentPresence(channel);
       });
-      await channel
-          .subscribe()
-          .timeout(const Duration(seconds: 10));
-      await channel
-          .track({'user_id': userUid, 'match_id': currentMatch!['id']})
-          .timeout(const Duration(seconds: 10));
+
+      channel.onBroadcast(
+        event: 'match_ready',
+        callback: (dynamic payload) {
+          final data = payload is Map ? payload['payload'] : null;
+          final matchId = data is Map ? data['matchId']?.toString() : null;
+
+          if (matchId == null || matchId.isEmpty) return;
+
+          _openOnlineMatch(
+            matchId,
+            userUid == currentMatch!['player1'] ? 'X' : 'O',
+          );
+        },
+      );
+
+      await channel.subscribe((status, [error]) async {
+        if (status.toString().contains('SUBSCRIBED') ||
+            status.toString().contains('subscribed')) {
+          try {
+            await channel.track({
+              'user_id': userUid,
+              'match_id': currentMatch!['id'],
+            });
+          } catch (e) {
+            debugPrint('Presence track failed: $e');
+          }
+        }
+      });
+
       _presenceConnected = true;
       _updatePresenceStatus();
+      _pollExistingOnlineMatch();
+
     } catch (e) {
       debugPrint('Tournament presence unavailable: $e');
-      _presenceConnected = false;
-      _presenceStatus?.text = 'PRESENCE UNAVAILABLE - TRY AGAIN';
+      _presenceStatus?.text = 'PRESENCE UNAVAILABLE - YOU CAN STILL PLAY';
+      _pollExistingOnlineMatch();
+    }
+  }
+
+  Future<void> _pollExistingOnlineMatch() async {
+    if (currentMatch == null || opponent == null) return;
+
+    try {
+      final code = SupabaseMatchService.tournamentMatchInviteCode(
+        tournamentId: tournamentId,
+        tournamentMatchId: currentMatch!['id'].toString(),
+      );
+
+      final existing = await SupabaseMatchService().getMatchByInviteCode(code);
+      if (existing != null && existing['id'] != null) {
+        final status = (existing['status'] ?? '').toString();
+        if (status == 'active' || status == 'waiting') {
+          final onlineMatchId = existing['id'].toString();
+          final mySymbol =
+              existing['player_x']?.toString() == userUid ? 'X' : 'O';
+          _presenceStatus?.text = 'MATCH FOUND - JOINING...';
+          _openOnlineMatch(onlineMatchId, mySymbol);
+        }
+      }
+    } catch (e) {
+      debugPrint('Poll existing tournament match failed: $e');
     }
   }
 
@@ -521,54 +545,28 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
     if (_opponentOnline) {
       _presenceStatus?.text = 'OPPONENT ONLINE - READY TO PLAY';
     } else if (_presenceConnected) {
-      final deadline = DateTime.tryParse(
-        currentMatch?['deadline']?.toString() ?? '',
-      );
-      if (_walkoverAvailable) {
-        _presenceStatus?.text = 'OPPONENT DID NOT JOIN\n[CLAIM WALKOVER]';
-      } else if (deadline != null) {
-        final remaining = deadline.difference(DateTime.now());
-        _presenceStatus?.text =
-            'OPPONENT OFFLINE\n'
-            'JOIN DEADLINE: ${_formatDeadline(deadline)}\n'
-            'WALKOVER AVAILABLE IN: ${_formatRemaining(remaining)}';
-      } else {
-        _presenceStatus?.text = 'OPPONENT OFFLINE';
-      }
+      _presenceStatus?.text = _walkoverAvailable
+          ? 'OPPONENT OFFLINE - WALKOVER AVAILABLE'
+          : 'WAITING FOR OPPONENT (YOU CAN STILL PLAY)';
     }
-  }
-
-  String _formatDeadline(DateTime deadline) {
-    final local = deadline.toLocal();
-    final weekday = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][local.weekday - 1];
-    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute.toString().padLeft(2, '0');
-    final suffix = local.hour >= 12 ? 'PM' : 'AM';
-    return '$weekday ${local.month}/${local.day}, $hour:$minute $suffix';
-  }
-
-  String _formatRemaining(Duration remaining) {
-    if (remaining.isNegative || remaining == Duration.zero) return 'NOW';
-    final hours = remaining.inHours;
-    final minutes = remaining.inMinutes.remainder(60);
-    return '${hours}h ${minutes}m';
   }
 
   @override
   void update(double dt) {
     super.update(dt);
+
     if (isLoading || currentMatch == null || _opponentOnline) return;
+
     final deadline = DateTime.tryParse(
       currentMatch!['deadline']?.toString() ?? '',
     );
+
     if (deadline != null &&
         DateTime.now().isAfter(deadline) &&
         !_walkoverAvailable) {
       _walkoverAvailable = true;
       _updatePresenceStatus();
       _addWalkoverButton();
-    } else if (!_walkoverAvailable) {
-      _updatePresenceStatus();
     }
   }
 
@@ -587,13 +585,16 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
 
   Future<void> _claimWalkover() async {
     if (currentMatch == null || opponent == null || _opponentOnline) return;
+
     final success = await tournamentService.forfeitMatch(
       tournamentId: tournamentId,
       matchId: currentMatch!['id'] as String,
     );
+
     _presenceStatus?.text = success
         ? 'WALKOVER CONFIRMED - YOU ADVANCE'
         : 'WALKOVER FAILED - REFRESH AND TRY AGAIN';
+
     if (success) {
       await Future<void>.delayed(const Duration(milliseconds: 800));
       (findGame() as TicTacToeGame).router.pushReplacementNamed('tournament_detail');
@@ -602,8 +603,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
 
   @override
   void onRemove() {
-    _removeRouteFallback();
-    _matchLookupTimer?.cancel();
+    _removeMatchLoadingFallback();
     final channel = _presenceChannel;
     if (channel != null) {
       try {
@@ -611,94 +611,5 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       } catch (_) {}
     }
     super.onRemove();
-  }
-}
-
-class _ConnectionLobbyOverlay extends PositionComponent {
-  final GameTheme theme;
-  final VoidCallback onRetry;
-  final VoidCallback onCancel;
-  String message;
-  TextComponent? _messageText;
-
-  _ConnectionLobbyOverlay({
-    required this.theme,
-    required this.message,
-    required this.onRetry,
-    required this.onCancel,
-  }) : super(priority: 100000, anchor: Anchor.topLeft);
-
-  @override
-  Future<void> onLoad() async {
-    final game = findGame();
-    if (game != null) size = game.size;
-    add(InputBlockingDim(
-      size: size,
-      color: const Color.fromARGB(190, 0, 0, 0),
-      priority: -1,
-    ));
-    final panelSize = Vector2(min(size.x - 36, 340), 230);
-    add(OrnateOverlayPanel(size: panelSize, theme: theme)
-      ..position = size / 2
-      ..anchor = Anchor.center);
-    add(TextComponent(
-      text: 'MATCH CONNECTION',
-      position: size / 2 - Vector2(0, 76),
-      anchor: Anchor.center,
-      textRenderer: TextPaint(
-        style: TextStyle(
-          color: theme.contrastColor,
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ));
-    _messageText = TextComponent(
-      text: message,
-      position: size / 2 - Vector2(0, 28),
-      anchor: Anchor.center,
-      textRenderer: TextPaint(
-        style: TextStyle(color: theme.contrastColor, fontSize: 13),
-      ),
-    );
-    add(_messageText!);
-    add(TextComponent(
-      text: '...',
-      position: size / 2 + Vector2(0, 22),
-      anchor: Anchor.center,
-      textRenderer: TextPaint(
-        style: TextStyle(color: theme.gridColor, fontSize: 18),
-      ),
-    ));
-    add(ButtonComponent(
-      label: 'RETRY',
-      position: size / 2 + Vector2(-72, 76),
-      size: Vector2(110, 38),
-      theme: theme,
-      onPressed: onRetry,
-    ));
-    add(ButtonComponent(
-      label: 'CANCEL',
-      position: size / 2 + Vector2(72, 76),
-      size: Vector2(110, 38),
-      theme: theme,
-      onPressed: onCancel,
-    ));
-    _updateButtonVisibility();
-  }
-
-  void setMessage(String nextMessage) {
-    message = nextMessage;
-    _messageText?.text = nextMessage;
-  }
-
-  void showFailure() {
-    setMessage('$message\nTap RETRY to reconnect.');
-    _updateButtonVisibility();
-  }
-
-  void _updateButtonVisibility() {
-    // RETRY remains available throughout, while the animated lobby stays
-    // visible so intermediate connection states never expose a blank route.
   }
 }

@@ -734,6 +734,13 @@ class TicTacToeInviteScreen extends Component {
     }
     try {
       await service.reconnect(matchId);
+
+      // Critical: stream often skips initial row for already-active matches
+      final snapshot = await service.getMatch(matchId);
+      if (snapshot != null && snapshot.isNotEmpty) {
+        _applySupabaseMatch(Map<String, dynamic>.from(snapshot));
+      }
+
       supabaseMatchSubscription = service.watchMatch(matchId).listen(
         _applySupabaseMatch,
         onError: (error) {
@@ -909,7 +916,7 @@ class TicTacToeInviteScreen extends Component {
           board[index] = flattened[index];
           final cell = children
               .whereType<TicTacToeCellInvite>()
-              .firstWhere((item) => item.row * 3 + item.col == index);
+              .firstWhere((item) => item.row * boardSize + item.col == index);
           if (board[index].isNotEmpty) cell.mark(board[index]);
         }
       }
@@ -1058,7 +1065,7 @@ class TicTacToeInviteScreen extends Component {
     }
   }
   void handleTap(int row, int col) async {
-    if (!_matchReady || gameOver || _isPaused || _moveInFlight || board[row * 3 + col] != '') {
+    if (!_matchReady || gameOver || _isPaused || _moveInFlight || board[row * boardSize + col] != '') {
       return;
     }
     final service = SupabaseMatchService();

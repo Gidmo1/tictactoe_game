@@ -184,7 +184,15 @@ class TournamentDetailScreen extends Component with HasGameReference<TicTacToeGa
         position: Vector2(size.x / 2, size.y - 132),
         size: Vector2(min(size.x - 50, 220), 44),
         theme: ThemeStore.current,
-        onPressed: () => (findGame() as TicTacToeGame).router.pushReplacementNamed('tournament_match_play'),
+        onPressed: () {
+          debugPrint('[TOURNAMENT DETAIL] PLAY MATCH button pressed!');
+          final gameRef = findGame() as TicTacToeGame;
+          debugPrint('[TOURNAMENT DETAIL] Setting activeTournamentId=$tournamentId');
+          gameRef.activeTournamentId = tournamentId;
+          debugPrint('[TOURNAMENT DETAIL] Pushing route tournament_match_play');
+          gameRef.router.pushReplacementNamed('tournament_match_play');
+          debugPrint('[TOURNAMENT DETAIL] Route pushed!');
+        },
       ));
     } else if (userUid == current.createdBy &&
       current.status == TournamentStatus.waiting &&
