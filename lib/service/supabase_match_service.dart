@@ -64,38 +64,75 @@ class SupabaseMatchService {
       tournamentId: tournamentId,
       tournamentMatchId: tournamentMatchId,
     );
-    debugPrint('[TOURNAMENT] Generated invite code: $code');
+    debugPrint('[TOURNAMENT] Using dedicated tournament slot code: $code');
 
-    final existing = await getMatchByInviteCode(code);
-    if (existing != null) {
-      final id = existing['id']?.toString();
-      final status = (existing['status'] ?? '').toString();
-      final isParticipant = userId == existing['player_x'] ||
-          userId == existing['player_o'];
+    // Preferred path: the dedicated start_or_join_tournament_match RPC
+    // (migration 20240004). When that function or its supporting column has
+    // not been deployed yet, we transparently fall back to the legacy
+    // create_match/join_match flow so matchmaking keeps working.
+    try {
+      final result = await client.rpc(
+        'start_or_join_tournament_match',
+        params: {
+          'target_tournament_id': tournamentId,
+          'target_tournament_match_id': tournamentMatchId,
+          'target_board_size': boardSize,
+          'target_win_length': winLength,
+          'target_opponent_id': opponentId,
+        },
+      );
 
-      debugPrint('[TOURNAMENT] Found existing match: id=$id, status=$status, isParticipant=$isParticipant');
-
-      if (id != null && isParticipant) {
-        debugPrint('[TOURNAMENT] Returning existing match (already participant)');
-        return Map<String, dynamic>.from(existing);
-      }
-
-      if (id != null && status == 'waiting') {
-        try {
-          debugPrint('[TOURNAMENT] Joining existing waiting match...');
-          return await joinMatch(matchId: code);
-        } catch (e) {
-          debugPrint('[TOURNAMENT] Join failed: $e');
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        if (map['id'] != null) {
+          return map;
         }
+        debugPrint('[TOURNAMENT] RPC returned an unusual shape: $result');
+      } else {
+        debugPrint('[TOURNAMENT] RPC returned a non-map result: $result');
+      }
+    } catch (error) {
+      debugPrint('[TOURNAMENT] start_or_join_tournament_match failed: $error');
+    }
+
+    // If the RPC exists but failed mid-flight, try to recover the online
+    // match directly by its deterministic tournament slot code. Wrapped so
+    // a missing column cannot mask the original error.
+    try {
+      final recovered = await getTournamentMatchByCode(code);
+      if (recovered != null && recovered['id'] != null) {
+        debugPrint('[TOURNAMENT] Recovered existing match: ${recovered['id']}');
+        return Map<String, dynamic>.from(recovered);
+      }
+    } catch (readError) {
+      debugPrint('[TOURNAMENT] Could not recover match by tournament code: $readError');
+    }
+
+    // Legacy fallback (works against the deployed schema without migration
+    // 20240004): join a waiting match, otherwise create it. player_o is
+    // pre-filled with the opponent, so both sides converge on the same row.
+    final existing = await getMatchByInviteCode(code);
+    if (existing != null && existing['id'] != null) {
+      final String id = existing['id'].toString();
+      final String status = (existing['status'] ?? '').toString();
+      final bool isParticipant = userId == existing['player_x']?.toString() ||
+          userId == existing['player_o']?.toString();
+
+      if (isParticipant && (status == 'active' || status == 'waiting')) {
+        debugPrint('[TOURNAMENT] Joining existing match as participant: $id');
+        return Map<String, dynamic>.from(existing);
       }
 
-      if (id != null && isParticipant) {
-        debugPrint('[TOURNAMENT] Returning existing match (participant check 2)');
-        return Map<String, dynamic>.from(existing);
+      if (status == 'waiting' && !isParticipant) {
+        try {
+          debugPrint('[TOURNAMENT] Joining existing waiting match: $id');
+          return await joinMatch(matchId: code);
+        } catch (joinError) {
+          debugPrint('[TOURNAMENT] Legacy join failed: $joinError');
+        }
       }
     }
 
-    debugPrint('[TOURNAMENT] Creating new match with code: $code');
     try {
       final created = await createMatch(
         boardSize: boardSize,
@@ -103,16 +140,36 @@ class SupabaseMatchService {
         opponentId: opponentId,
         inviteCode: code,
       );
-      debugPrint('[TOURNAMENT] Match created successfully: ${created['id']}');
-      return created;
-    } catch (e) {
-      debugPrint('[TOURNAMENT] Create failed: $e, checking for race condition...');
+      if (created['id'] != null) {
+        // The create_match RPC silently regenerates the invite code whenever
+        // it is already taken. That means the other player won the race and
+        // already holds the slot match — converge on their row so both sides
+        // land in the same online match.
+        final createdCode =
+            (created['invite_code'] ?? '').toString().toUpperCase();
+        if (createdCode.isNotEmpty && createdCode != code) {
+          debugPrint('[TOURNAMENT] Slot code was taken; joining winner');
+          final raced = await getMatchByInviteCode(code);
+          if (raced != null && raced['id'] != null) {
+            debugPrint('[TOURNAMENT] Joined winner match: ${raced['id']}');
+            return Map<String, dynamic>.from(raced);
+          }
+          debugPrint('[TOURNAMENT] Winner match not found; using own row');
+        } else {
+          debugPrint('[TOURNAMENT] Created fallback match: ${created['id']}');
+        }
+        return created;
+      }
+      throw StateError('Online match was not created');
+    } catch (createError) {
+      // Two players attempting to create at the same time: the loser may hit
+      // a unique invite_code violation and recovers the winner's row below.
+      debugPrint('[TOURNAMENT] Legacy create failed: $createError; checking for race');
       final raced = await getMatchByInviteCode(code);
-      if (raced != null) {
+      if (raced != null && raced['id'] != null) {
         debugPrint('[TOURNAMENT] Found race-created match: ${raced['id']}');
         return Map<String, dynamic>.from(raced);
       }
-      debugPrint('[TOURNAMENT] No race match found, rethrowing: $e');
       rethrow;
     }
   }
@@ -159,6 +216,17 @@ class SupabaseMatchService {
         .from('matches')
         .select()
         .eq('invite_code', code)
+        .maybeSingle();
+  }
+
+  Future<Map<String, dynamic>?> getTournamentMatchByCode(String inviteCode) async {
+    final code = inviteCode.trim().toUpperCase();
+    if (code.isEmpty) return null;
+
+    return await client
+        .from('matches')
+        .select()
+        .eq('tournament_match_code', code)
         .maybeSingle();
   }
 

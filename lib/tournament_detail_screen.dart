@@ -12,6 +12,7 @@ import 'package:tictactoe_game/models/tournament.dart';
 import 'package:tictactoe_game/service/bracket_service.dart';
 import 'package:tictactoe_game/service/tournament_service.dart';
 import 'package:tictactoe_game/tictactoe.dart';
+import 'package:tictactoe_game/tournament_match_play_screen.dart';
 
 class TournamentDetailScreen extends Component with HasGameReference<TicTacToeGame> {
   late TournamentService tournamentService;
@@ -190,7 +191,10 @@ class TournamentDetailScreen extends Component with HasGameReference<TicTacToeGa
           debugPrint('[TOURNAMENT DETAIL] Setting activeTournamentId=$tournamentId');
           gameRef.activeTournamentId = tournamentId;
           debugPrint('[TOURNAMENT DETAIL] Pushing route tournament_match_play');
-          gameRef.router.pushReplacementNamed('tournament_match_play');
+          gameRef.pushFreshRoute(
+            'tournament_match_play',
+            () => TournamentMatchPlayScreen(),
+          );
           debugPrint('[TOURNAMENT DETAIL] Route pushed!');
         },
       ));

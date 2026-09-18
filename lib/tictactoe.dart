@@ -53,6 +53,17 @@ class ObservingRouter extends RouterComponent {
     super.pushNamed(name, replace: replace);
   }
 
+  void pushFreshNamed(String name, Component Function() builder) {
+    try {
+      onRouteChanged?.call(name);
+    } catch (_) {}
+    super.pushRoute(
+      Route(builder, maintainState: false),
+      name: name,
+      replace: true,
+    );
+  }
+
   @override
   Future<void> pop() async {
     return super.pop();
@@ -297,6 +308,20 @@ class TicTacToeGame extends FlameGame
     router.pushNamed('settings_$returnRoute');
   }
 
+  void pushFreshRoute(String name, Component Function() builder) {
+    final observingRouter = router is ObservingRouter
+        ? router as ObservingRouter
+        : null;
+    if (observingRouter != null) {
+      observingRouter.pushFreshNamed(name, builder);
+      return;
+    }
+    router.pushReplacement(
+      Route(builder, maintainState: false),
+      name: name,
+    );
+  }
+
   void openTournamentDetails(String tournamentId) {
     activeTournamentId = tournamentId;
     router.pushReplacement(
@@ -472,9 +497,12 @@ class TicTacToeGame extends FlameGame
         'tournaments': Route(() => TournamentsScreen()),
         'create_tournament': Route(() => CreateTournamentScreen()),
         'join_tournament': Route(() => JoinTournamentScreen()),
-        'tournament_detail': Route(() => TournamentDetailScreen()),
-        'tournament_match_play': Route(() => TournamentMatchPlayScreen()),
-        'tournament_board': Route(() => TournamentBoardScreen()),
+        'tournament_detail': Route(() => TournamentDetailScreen(), maintainState: false),
+        'tournament_match_play': Route(
+          () => TournamentMatchPlayScreen(),
+          maintainState: false,
+        ),
+        'tournament_board': Route(() => TournamentBoardScreen(), maintainState: false),
         'themes': Route(() => ThemePickerScreen()),
       },
       onRouteChanged: (name) => handleRouteChange(name),
@@ -482,21 +510,6 @@ class TicTacToeGame extends FlameGame
 
     add(router);
     routerReady = true;
-
-    // preload common assets that the Competition screen and matchmaking UI
-    try {
-      await images.load('leaderboard_background.png');
-      await images.load('loading.png');
-      await images.load('background.png');
-      await images.load('retry.png');
-      // Record a prefs flag indicating preload succeeded
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('assets_preloaded_v1', true);
-      } catch (_) {}
-    } catch (e) {
-      print('Preload assets failed: $e');
-    }
 
     // Ensure music state matches menu on startup
     _handleMusicForRoute('menu');
@@ -622,32 +635,36 @@ class MainMenuScreen extends Component with HasGameReference<TicTacToeGame> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final chosen = prefs.getString('chosen_avatar') ?? '';
-      Sprite? profileSprite;
-      final candidates = chosen.isNotEmpty
-          ? ['assets/images/$chosen.png', 'images/$chosen.png', '$chosen.png']
-          : ['profile.png', 'images/profile.png', 'assets/images/profile.png'];
-      for (final key in candidates) {
-        try {
-          profileSprite = await game.loadSprite(key);
-          break;
-        } catch (_) {}
-      }
-      if (profileSprite != null) {
-        if (generation != null && generation != _themeBuildGeneration) return;
-        final pa = ProfileAvatar(
-          sprite: profileSprite,
-          size: Vector2(60, 60),
-          position: Vector2(50, 60),
-          onTap: () => game.router.pushNamed('profile'),
-        );
-        try {
-          pa.paint = Paint()..color = const Color.fromRGBO(255, 255, 255, 1.0);
-        } catch (_) {}
-        try {
-          pa.priority = 1000000000000;
-        } catch (_) {}
-        add(pa);
-        _themedChildren.add(pa);
+      if (chosen.isNotEmpty) {
+        Sprite? profileSprite;
+        final candidates = [
+          'assets/images/$chosen.png',
+          'images/$chosen.png',
+          '$chosen.png',
+        ];
+        for (final key in candidates) {
+          try {
+            profileSprite = await game.loadSprite(key);
+            break;
+          } catch (_) {}
+        }
+        if (profileSprite != null) {
+          if (generation != null && generation != _themeBuildGeneration) return;
+          final pa = ProfileAvatar(
+            sprite: profileSprite,
+            size: Vector2(60, 60),
+            position: Vector2(50, 60),
+            onTap: () => game.router.pushNamed('profile'),
+          );
+          try {
+            pa.paint = Paint()..color = const Color.fromRGBO(255, 255, 255, 1.0);
+          } catch (_) {}
+          try {
+            pa.priority = 1000000000000;
+          } catch (_) {}
+          add(pa);
+          _themedChildren.add(pa);
+        }
       }
     } catch (_) {}
 

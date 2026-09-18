@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
@@ -7,6 +8,7 @@ import 'package:flame_audio/flame_audio.dart';
 import 'package:flutter/material.dart';
 
 import '../game_themes/theme.dart';
+import '../game_themes/theme_store.dart';
 import '../settings_screen.dart';
 
 /// A fully procedural button — no PNG asset required.
@@ -93,7 +95,7 @@ class ButtonComponent extends PositionComponent with TapCallbacks {
   }
 }
 
-class SettingsIconButton extends SpriteComponent with TapCallbacks {
+class SettingsIconButton extends PositionComponent with TapCallbacks {
   final VoidCallback onPressed;
 
   SettingsIconButton({
@@ -103,13 +105,39 @@ class SettingsIconButton extends SpriteComponent with TapCallbacks {
   }) : super(position: position, size: size, anchor: Anchor.center);
 
   @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    try {
-      sprite =
-          await (findGame()?.loadSprite('settings.png') ??
-              Sprite.load('settings.png'));
-    } catch (_) {}
+  void render(Canvas canvas) {
+    final center = Offset(size.x / 2, size.y / 2);
+    final shortestSide = math.min(size.x, size.y);
+    final theme = ThemeStore.current;
+    final badgeRadius = shortestSide * 0.46;
+    final badgePaint = Paint()..color = theme.buttonBase.withValues(alpha: 0.92);
+    final borderPaint = Paint()
+      ..color = theme.gridColor.withValues(alpha: 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = shortestSide * 0.045;
+
+    canvas.drawCircle(center, badgeRadius, badgePaint);
+    canvas.drawCircle(center, badgeRadius, borderPaint);
+
+    final gearPath = Path();
+    final gearRadius = shortestSide * 0.29;
+    for (var index = 0; index < 24; index++) {
+      final angle = -math.pi / 2 + index * math.pi / 12;
+      final radius = index.isEven ? gearRadius : gearRadius * 0.78;
+      final point = Offset(
+        center.dx + radius * math.cos(angle),
+        center.dy + radius * math.sin(angle),
+      );
+      if (index == 0) {
+        gearPath.moveTo(point.dx, point.dy);
+      } else {
+        gearPath.lineTo(point.dx, point.dy);
+      }
+    }
+    gearPath.close();
+    canvas.drawPath(gearPath, Paint()..color = theme.contrastColor);
+    canvas.drawCircle(center, shortestSide * 0.115, badgePaint);
+    super.render(canvas);
   }
 
   @override

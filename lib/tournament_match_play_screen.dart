@@ -1,3 +1,5 @@
+import 'dart:async' as async_tools;
+
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart' hide Route;
 import 'package:tictactoe_game/tictactoe.dart';
@@ -25,6 +27,7 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
   dynamic _presenceChannel;
   TextComponent? _presenceStatus;
   TextComponent? _loadingText;
+  async_tools.Timer? _matchPollTimer;
 
   TournamentMatchPlayScreen() {
     debugPrint('[TOURNAMENT PLAY SCREEN] Constructor called!');
@@ -381,7 +384,10 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
 
           } catch (e) {
             debugPrint('Could not start tournament match: $e');
-            _presenceStatus?.text = 'COULD NOT START MATCH - TRY AGAIN';
+            final message = e.toString();
+            _presenceStatus?.text = message.length > 96
+                ? 'MATCH FAILED: ${message.substring(0, 96)}...'
+                : 'MATCH FAILED: $message';
           }
         },
       ),
@@ -455,15 +461,17 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
       channel.onBroadcast(
         event: 'match_ready',
         callback: (dynamic payload) {
-          final data = payload is Map ? payload['payload'] : null;
-          final matchId = data is Map ? data['matchId']?.toString() : null;
+          // Supabase delivers the payload map directly (not nested under
+          // a 'payload' key), so read matchId straight from the top level.
+          final data = payload is Map ? payload : null;
+          final matchId = data?['matchId']?.toString();
 
           if (matchId == null || matchId.isEmpty) return;
 
-          _openOnlineMatch(
-            matchId,
-            userUid == currentMatch!['player1'] ? 'X' : 'O',
-          );
+          // Resolve the correct symbol by looking up the online match row
+          // rather than guessing from the bracket player order, which may
+          // differ from the online match player_x / player_o assignment.
+          _joinBroadcastMatch(matchId);
         },
       );
 
@@ -483,13 +491,25 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
 
       _presenceConnected = true;
       _updatePresenceStatus();
-      _pollExistingOnlineMatch();
+      _startMatchPolling();
 
     } catch (e) {
       debugPrint('Tournament presence unavailable: $e');
       _presenceStatus?.text = 'PRESENCE UNAVAILABLE - YOU CAN STILL PLAY';
-      _pollExistingOnlineMatch();
+      _startMatchPolling();
     }
+  }
+
+  /// Starts a periodic poll so the second player automatically joins as soon
+  /// as the first player creates the online match row (even if the broadcast
+  /// was missed or arrived before the subscription was ready).
+  void _startMatchPolling() {
+    _matchPollTimer?.cancel();
+    _matchPollTimer = async_tools.Timer.periodic(const Duration(seconds: 3), (_) {
+      _pollExistingOnlineMatch();
+    });
+    // Also do an immediate check.
+    _pollExistingOnlineMatch();
   }
 
   Future<void> _pollExistingOnlineMatch() async {
@@ -509,11 +529,33 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
           final mySymbol =
               existing['player_x']?.toString() == userUid ? 'X' : 'O';
           _presenceStatus?.text = 'MATCH FOUND - JOINING...';
+          _matchPollTimer?.cancel();
+          _matchPollTimer = null;
           _openOnlineMatch(onlineMatchId, mySymbol);
         }
       }
     } catch (e) {
       debugPrint('Poll existing tournament match failed: $e');
+    }
+  }
+
+  /// Joins a match whose ID was received via the `match_ready` broadcast.
+  /// Looks up the online match row to determine the correct symbol instead
+  /// of guessing from the bracket player order.
+  Future<void> _joinBroadcastMatch(String onlineMatchId) async {
+    try {
+      _matchPollTimer?.cancel();
+      _matchPollTimer = null;
+      final match = await SupabaseMatchService().getMatch(onlineMatchId);
+      if (match == null || match['id'] == null) {
+        debugPrint('[TOURNAMENT PLAY] Broadcast match not found: $onlineMatchId');
+        return;
+      }
+      final mySymbol = match['player_x']?.toString() == userUid ? 'X' : 'O';
+      _presenceStatus?.text = 'MATCH READY - JOINING...';
+      _openOnlineMatch(onlineMatchId, mySymbol);
+    } catch (e) {
+      debugPrint('[TOURNAMENT PLAY] Could not join broadcast match: $e');
     }
   }
 
@@ -604,6 +646,8 @@ class TournamentMatchPlayScreen extends Component with HasGameReference<TicTacTo
   @override
   void onRemove() {
     _removeMatchLoadingFallback();
+    _matchPollTimer?.cancel();
+    _matchPollTimer = null;
     final channel = _presenceChannel;
     if (channel != null) {
       try {
